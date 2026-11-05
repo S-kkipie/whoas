@@ -186,16 +186,49 @@ func TestPromotesNewSharedState(t *testing.T) {
 	require.Equal(t, "dark", strings.TrimSpace(string(got)))
 }
 
+// writeState records holders and hash for the fixture's overlay.
+func (f *fixture) writeState(t *testing.T, s runlock.State) {
+	t.Helper()
+	l, err := runlock.Acquire(context.Background(), f.plan.RunBase, time.Second)
+	require.NoError(t, err)
+	require.NoError(t, l.Write(s))
+	require.NoError(t, l.Release())
+}
+
 func TestRecoverHelper(t *testing.T) {
 	f := newFixture(t, `true`)
 	require.NoError(t, os.MkdirAll(f.plan.RunBase, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(f.plan.RunBase, "auth.json"), []byte("orphan"), 0o600))
+	f.writeState(t, runlock.State{Holders: []int{deadPID(t)}, Hash: "stale"})
 	found, err := Recover(context.Background(), f.plan.RunBase, f.global, f.plan.Adapter, f.plan.Ref, f.plan.Vault)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, "orphan", f.vaultAuth(t))
 	_, err = os.Stat(f.plan.RunBase)
 	require.True(t, os.IsNotExist(err), "overlay removed")
+}
+
+// An overlay without a recorded hash was never completed by join (crash
+// mid-build): it must be dropped, never sealed over the vault.
+func TestRecoverDoesNotSealIncompleteOverlay(t *testing.T) {
+	for name, recov := range map[string]func(t *testing.T, f *fixture){
+		"run": func(t *testing.T, f *fixture) { run(t, f.plan) },
+		"Recover": func(t *testing.T, f *fixture) {
+			found, err := Recover(context.Background(), f.plan.RunBase, f.global, f.plan.Adapter, f.plan.Ref, f.plan.Vault)
+			require.NoError(t, err)
+			require.True(t, found)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, `true`)
+			require.NoError(t, os.MkdirAll(f.plan.RunBase, 0o700))
+			require.NoError(t, os.WriteFile(filepath.Join(f.plan.RunBase, "auth.json"), nil, 0o600))
+			recov(t, f)
+			require.Equal(t, "old", f.vaultAuth(t), "half-built overlay not sealed")
+			_, err := os.Stat(f.plan.RunBase)
+			require.True(t, os.IsNotExist(err), "overlay removed")
+		})
+	}
 }
 
 func TestIgnoredSignalStaysIgnored(t *testing.T) {

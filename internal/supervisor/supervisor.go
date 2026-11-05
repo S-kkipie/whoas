@@ -154,13 +154,17 @@ func sealIfChanged(dir string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, pr
 	return h, nil
 }
 
-// recoverStale seals and removes an overlay left by crashed holders.
+// recoverStale seals and removes an overlay left by crashed holders. An
+// overlay with no recorded hash was never completed by join (a completed join
+// always records one), so it is removed without sealing.
 func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, hash string, warn io.Writer) (bool, error) {
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	if _, err := sealIfChanged(dir, a, r, v, hash); err != nil {
-		return false, err
+	if hash != "" {
+		if _, err := sealIfChanged(dir, a, r, v, hash); err != nil {
+			return false, err
+		}
 	}
 	if err := overlay.Promote(dir, global, a.Dir.AuthFiles); err != nil {
 		fmt.Fprintf(warn, "whoas: warning: could not share new non-auth files: %v\n", err)
