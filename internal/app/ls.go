@@ -1,9 +1,11 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -79,7 +81,18 @@ func newRmCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			st, _ := runlock.Peek(e.dirs.RunBase(r.Provider, r.Alias))
+			if err := e.dirs.EnsureRuntime(); err != nil {
+				return err
+			}
+			l, err := runlock.Acquire(context.Background(), e.dirs.RunBase(r.Provider, r.Alias), 10*time.Second)
+			if err != nil {
+				return err
+			}
+			defer l.Release()
+			st, err := l.Read()
+			if err != nil {
+				return fmt.Errorf("check whether %s is in use: %w", r, err)
+			}
 			if live := st.Live(); len(live) > 0 {
 				return fmt.Errorf("%s is in use by pid %v", r, live)
 			}

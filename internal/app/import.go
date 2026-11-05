@@ -44,9 +44,21 @@ func newImportCmd() *cobra.Command {
 			if len(files) == 0 {
 				return fmt.Errorf("no session found in %s (expected %v)", global, a.Dir.AuthFiles)
 			}
+			if err := e.dirs.EnsureRuntime(); err != nil {
+				return err
+			}
+			dir := e.dirs.CaptureDir(r.Provider, r.Alias)
+			defer overlay.Remove(dir)
+			if err := overlay.Build(dir, global, a.Dir.AuthFiles, files); err != nil {
+				return err
+			}
 			account := ""
 			if bin, err := e.realBin(a.Bin); err == nil {
-				account = whoami(a, bin, global)
+				account = whoami(a, bin, dir)
+			}
+			files, err = overlay.Collect(dir, a.Dir.AuthFiles)
+			if err != nil {
+				return err
 			}
 			return save(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, account)
 		},

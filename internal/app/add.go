@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -51,7 +54,13 @@ func newAddCmd() *cobra.Command {
 			if a.Login.Hint != "" {
 				fmt.Fprintln(cmd.ErrOrStderr(), "hint:", a.Login.Hint)
 			}
-			if err := runIn(a, bin, dir, a.Login.Cmd[1:], cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+			// whoas stays alive while the CLI's interactive login runs so the capture dir is
+			// always removed; the terminal still delivers Ctrl-C to the CLI itself.
+			sigs := make(chan os.Signal, 4)
+			signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT)
+			err = runIn(a, bin, dir, a.Login.Cmd[1:], cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			signal.Stop(sigs)
+			if err != nil {
 				return fmt.Errorf("login failed: %w", err)
 			}
 			files, err := overlay.Collect(dir, a.Dir.AuthFiles)
