@@ -43,7 +43,8 @@ func runAgent(t *testing.T, sock string) {
 }
 
 func TestFastStoreNoAgent(t *testing.T) {
-	id, _ := age.GenerateX25519Identity()
+	id, err := age.GenerateX25519Identity()
+	require.NoError(t, err)
 	st := &fakeStore{secret: id.String()}
 	d, err := Decrypter(socket(t), st, "")
 	require.NoError(t, err)
@@ -53,7 +54,8 @@ func TestFastStoreNoAgent(t *testing.T) {
 func TestSlowStoreLoadsRunningAgent(t *testing.T) {
 	sock := socket(t)
 	runAgent(t, sock)
-	id, _ := age.GenerateX25519Identity()
+	id, err := age.GenerateX25519Identity()
+	require.NoError(t, err)
 	st := &fakeStore{secret: id.String(), slow: true}
 
 	d, err := Decrypter(sock, st, "")
