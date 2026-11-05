@@ -44,6 +44,7 @@ whoas import <provider> <alias>     # save the CLI's current global session
 whoas ls                            # identities (never prints secrets)
 whoas <provider>@<alias> [args...]  # run as that identity; args pass through verbatim
 whoas which <provider>              # what would resolve, and why
+whoas doctor                        # check setup; clean overlays/captures left by crashed runs
 ```
 
 ### Profiles and projects
@@ -69,21 +70,31 @@ whoas run -p work -- claude         # every CLI the agent runs resolves to "work
 
 A shim with no identity resolved is a zero-overhead `exec` of the real CLI.
 
+`shims install` and `uninstall` only touch whoas's own links; anything else in
+the shims dir is left alone.
+
 ### Key agent
 
 On WSL and with the passphrase fallback, reading the master key is slow, so
 whoas starts `whoas agent` to cache it (the key never leaves the agent; clients
 send ciphertext). `whoas unlock` / `whoas lock` control it.
 
-### Exit codes
+### Exit codes and signals
 
-The CLI's own exit code (or signal) is passed through. whoas's own failures on
-the run path exit `125`; `126` = exec failed; `127` = CLI not found.
+The CLI's exit status is passed through. If the CLI dies from SIGHUP, SIGINT
+or SIGTERM, whoas re-raises that signal; any other signal exits `128+n`.
+whoas's own failures exit `125`, a CLI that cannot be executed `126`, and a CLI
+that is not on PATH `127`, on every run path (explicit, shim and `run`).
+
+SIGTERM and SIGHUP are always forwarded to the CLI. SIGINT and SIGQUIT are
+forwarded only when whoas is not in the terminal's foreground process group
+(agents, CI); in a terminal, Ctrl-C already reaches the CLI. Signals ignored by
+whoas's parent (e.g. under `nohup`) stay ignored.
 
 ## How it works
 
 For `whoas gh@work`, whoas builds an overlay of `~/.config/gh` in
-`$XDG_RUNTIME_DIR/whoas`: every entry is a symlink to the real one except the
+`$XDG_RUNTIME_DIR/whoas` (`$TMPDIR/whoas` on macOS): every entry is a symlink to the real one except the
 auth files (`hosts.yml`), which are decrypted from the vault. gh is pointed at
 the overlay (`GH_CONFIG_DIR`). Processes using the same identity share the
 overlay; when gh refreshes a token it is re-sealed within ~200ms; when the last
@@ -114,18 +125,22 @@ cmd  = ["mycli", "whoami", "--json"]
 json = "email"                               # optional gjson path
 ```
 
+Validation: every `inject.env` value must contain `{dir}`, `global` must start
+with `{home}/`, `{xdg_config}/` or `{xdg_data}/`, and no two adapters may share
+a `bin`.
+
 ## Threat model
 
 **Protects against**
 
 - Running against the wrong account (explicit resolution, banner, `which`, trust gate).
 - Sessions leaking at rest through backups, dotfile repos, cloud sync or disk
-  theft: the vault is encrypted; plaintext exists only on tmpfs while in use.
+  theft: the vault is encrypted; plaintext exists only in the runtime dir (tmpfs on Linux) while in use.
 - whoas leaking secrets in output: `ls`, `doctor` and errors never print them;
   injection uses env vars and paths, never tokens in argv.
 - Malicious repositories: `.whoas.yaml` needs `whoas trust` (by content hash)
-  and only accepts `profile` and `provider: alias` strings.
-- Other local users: 0700/0600 permissions and a peer-uid check on the agent socket.
+  and only accepts `profile` and `provider: alias` strings (max 64 KiB, no YAML anchors or aliases).
+- Other local users: 0700/0600 permissions, plus a peer-uid check on the agent socket on Linux and macOS.
 
 **Does not protect against**
 
