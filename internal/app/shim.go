@@ -21,7 +21,7 @@ func shimMain(bin string, args []string) int {
 		}
 		if !errors.Is(err, errPassthrough) {
 			fmt.Fprintln(os.Stderr, "whoas:", err)
-			return exitWhoasError
+			return exitCodeFor(err)
 		}
 	}
 	real, err := e.realBin(bin)

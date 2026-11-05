@@ -20,6 +20,9 @@ import (
 	"github.com/S-kkipie/whoas/internal/vault"
 )
 
+// ErrStart wraps failures to start the real CLI.
+var ErrStart = errors.New("start failed")
+
 // Plan is everything one supervised run needs.
 type Plan struct {
 	Ref         ref.Ref

@@ -29,6 +29,9 @@ const maxDepth = 8
 // errPassthrough means no identity applies; a shim should exec the global CLI.
 var errPassthrough = errors.New("passthrough")
 
+// errCLINotFound means the CLI binary was not found on PATH.
+var errCLINotFound = errors.New("CLI not found")
+
 type runRequest struct {
 	provider    string
 	alias       string
@@ -49,7 +52,7 @@ func execMain(profileFlag, token string, args []string) int {
 		}
 	}
 	fmt.Fprintln(os.Stderr, "whoas:", err)
-	return exitWhoasError
+	return exitCodeFor(err)
 }
 
 // runProvider resolves the identity and runs the CLI under the supervisor.
@@ -68,7 +71,7 @@ func runProvider(e *env, req runRequest) (int, error) {
 	}
 	bin, err := e.realBin(a.Bin)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%w: %w", errCLINotFound, err)
 	}
 	v, err := e.openVault()
 	if errors.Is(err, vault.ErrNotInitialized) {
@@ -164,6 +167,18 @@ func (e *env) trustedProject(warnOnly bool) (*project.File, error) {
 		return nil, msg
 	}
 	return project.Parse(path, data)
+}
+
+// exitCodeFor maps an error to its exit code: CLI not found → 127, exec start
+// failed → 126, anything else → 125.
+func exitCodeFor(err error) int {
+	if errors.Is(err, errCLINotFound) {
+		return exitNotFound
+	}
+	if errors.Is(err, supervisor.ErrStart) {
+		return exitExecFailed
+	}
+	return exitWhoasError
 }
 
 // banner prints the identity on stderr when it is a terminal, or always /

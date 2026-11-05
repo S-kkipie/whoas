@@ -83,3 +83,45 @@ wait
 unchanged $HOME/.fakecli/auth.json g
 exec fakecli whoami
 stdout '^account=global$'
+
+# WHOAS_DEPTH guards against shim loops
+env WHOAS_DEPTH=8
+expect-exit 125 whoas fakecli@work whoami
+stderr 'WHOAS_DEPTH limit reached'
+env WHOAS_DEPTH=
+
+# CLI not on PATH -> 127
+expect-exit 127 whoas ghost@x whoami
+stderr 'CLI not found'
+
+# CLI found but cannot be executed -> 126
+chmod 755 bin2/brokencli
+env PATH=$WORK/bin2:$PATH
+exec whoas import broken x
+expect-exit 126 whoas broken@x anything
+stderr 'start failed'
+
+-- cfg/adapters/ghost.toml --
+name = "ghost"
+bin  = "ghostcli"
+kind = "dir-overlay"
+[dir]
+global     = "{home}/.ghost"
+inject     = { env = { GHOST_DIR = "{dir}" } }
+auth_files = ["a.json"]
+[login]
+cmd = ["ghostcli", "login"]
+-- cfg/adapters/broken.toml --
+name = "broken"
+bin  = "brokencli"
+kind = "dir-overlay"
+[dir]
+global     = "{home}/.broken"
+inject     = { env = { BROKEN_DIR = "{dir}" } }
+auth_files = ["a.json"]
+[login]
+cmd = ["brokencli", "login"]
+-- home/.broken/a.json --
+{"t":"x"}
+-- bin2/brokencli --
+#!/nonexistent/interpreter

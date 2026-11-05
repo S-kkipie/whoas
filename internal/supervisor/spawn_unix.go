@@ -38,7 +38,7 @@ func (p *Plan) spawn() (Result, error) {
 	defer signal.Stop(sigs)
 
 	if err := cmd.Start(); err != nil {
-		return Result{}, fmt.Errorf("start %s: %w", p.Bin, err)
+		return Result{}, fmt.Errorf("%w: %s: %w", ErrStart, p.Bin, err)
 	}
 	waited := make(chan struct{})
 	go func() {
