@@ -32,8 +32,13 @@ go install github.com/S-kkipie/whoas/cmd/whoas@latest
 lives in Windows Credential Manager:
 
 ```
-GOOS=windows go build -o "$(dirname "$(command -v whoas)")/whoas.exe" github.com/S-kkipie/whoas/cmd/whoas
+git clone https://github.com/S-kkipie/whoas && cd whoas
+GOOS=windows go build -o "$(dirname "$(command -v whoas)")/whoas.exe" ./cmd/whoas
 ```
+
+Do this before the first `whoas add`: whoas remembers the keystore backend it
+picks (in `~/.local/share/whoas/keystore`), and `WHOAS_KEYSTORE`
+(`os`, `wsl` or `passphrase`) overrides it.
 
 ## Use
 
@@ -83,8 +88,9 @@ send ciphertext). `whoas unlock` / `whoas lock` control it.
 
 The CLI's exit status is passed through. If the CLI dies from SIGHUP, SIGINT
 or SIGTERM, whoas re-raises that signal; any other signal exits `128+n`.
-whoas's own failures exit `125`, a CLI that cannot be executed `126`, and a CLI
-that is not on PATH `127`, on every run path (explicit, shim and `run`).
+On every run path (explicit, shim and `run`), whoas's own failures exit `125`,
+a CLI that cannot be executed `126`, and a CLI that is not on PATH `127`.
+Usage errors, such as a dangling `-p`, exit `2`.
 
 SIGTERM and SIGHUP are always forwarded to the CLI. SIGINT and SIGQUIT are
 forwarded only when whoas is not in the terminal's foreground process group
@@ -148,6 +154,9 @@ a `bin`.
   `/proc/<pid>/environ`, or ask the agent to decrypt). Same boundary as
   aws-vault and 1Password CLI.
 - The CLI's own child processes (they inherit the identity by design).
+- `WHOAS_MASTER_KEY` / `WHOAS_PASSPHRASE` (CI, containers): every process
+  whoas starts inherits them, including nested shimmed CLIs that need them. On
+  workstations prefer the OS keychain or the agent.
 - A compromised CLI binary.
 
 ## Credits
