@@ -1,0 +1,74 @@
+// Package project finds and parses .whoas.yaml. The schema is a whitelist:
+// "profile" plus provider: alias pairs, all strings. It can never declare
+// adapters, commands, paths or env, so a project file cannot run code.
+package project
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+
+	"github.com/goccy/go-yaml"
+
+	"github.com/S-kkipie/whoas/internal/ref"
+)
+
+// FileName is the project file name.
+const FileName = ".whoas.yaml"
+
+// File is a parsed project file.
+type File struct {
+	Path      string
+	Profile   string
+	Overrides map[string]string // provider → alias
+}
+
+// Find walks up from start and returns the nearest project file, or "".
+func Find(start string) (string, error) {
+	dir, err := filepath.Abs(start)
+	if err != nil {
+		return "", err
+	}
+	for {
+		p := filepath.Join(dir, FileName)
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", nil
+		}
+		dir = parent
+	}
+}
+
+// Parse validates data against the whitelist schema.
+func Parse(path string, data []byte) (*File, error) {
+	var raw map[string]any
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("%s: invalid YAML: %w", path, err)
+	}
+	f := &File{Path: path, Overrides: map[string]string{}}
+	for k, v := range raw {
+		s, ok := v.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s: %q must be a string", path, k)
+		}
+		if err := ref.ValidAlias(s); err != nil {
+			return nil, fmt.Errorf("%s: %s: %w", path, k, err)
+		}
+		if k == "profile" {
+			f.Profile = s
+			continue
+		}
+		if err := ref.ValidProvider(k); err != nil {
+			return nil, fmt.Errorf("%s: invalid key: %w", path, err)
+		}
+		f.Overrides[k] = s
+	}
+	return f, nil
+}
