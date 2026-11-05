@@ -1,6 +1,6 @@
 // Package adapter loads declarative TOML adapters that tell whoas where a
 // CLI keeps its session and how to point the CLI at another directory.
-// Adapters are data only: they never contain code to execute.
+// Adapters are data, not scripts, but they choose which binary runs with which arguments: only install adapters you trust, like any script in your config dir. Project files (.whoas.yaml) can never declare adapters.
 package adapter
 
 import (
@@ -69,6 +69,7 @@ type Vars struct {
 }
 
 var envNameRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
+var binNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // Parse decodes one adapter strictly (unknown keys are errors) and validates it.
 func Parse(data []byte, source string) (*Adapter, error) {
@@ -95,7 +96,7 @@ func (a *Adapter) Validate() error {
 	if err := ref.ValidProvider(a.Name); err != nil {
 		return err
 	}
-	if a.Bin == "" || strings.ContainsAny(a.Bin, `/\`) {
+	if !binNameRe.MatchString(a.Bin) {
 		return fmt.Errorf("bin %q must be a bare command name", a.Bin)
 	}
 	if a.Kind != KindDirOverlay {
@@ -103,6 +104,9 @@ func (a *Adapter) Validate() error {
 	}
 	if a.Dir.Global == "" {
 		return errors.New("dir.global is required")
+	}
+	if !strings.HasPrefix(a.Dir.Global, "{home}/") && !strings.HasPrefix(a.Dir.Global, "{xdg_config}/") && !strings.HasPrefix(a.Dir.Global, "{xdg_data}/") {
+		return errors.New("dir.global must start with {home}/, {xdg_config}/ or {xdg_data}/")
 	}
 	if len(a.Dir.AuthFiles) == 0 {
 		return errors.New("dir.auth_files is required")
@@ -117,18 +121,23 @@ func (a *Adapter) Validate() error {
 	if env == flag {
 		return errors.New("dir.inject needs exactly one of env or flag")
 	}
-	hasDir := false
-	for k, v := range a.Dir.Inject.Env {
-		if !envNameRe.MatchString(k) {
-			return fmt.Errorf("inject env name %q invalid", k)
+	if env {
+		for k, v := range a.Dir.Inject.Env {
+			if !envNameRe.MatchString(k) {
+				return fmt.Errorf("inject env name %q invalid", k)
+			}
+			if !strings.Contains(v, "{dir}") {
+				return fmt.Errorf("inject env %s must reference {dir}", k)
+			}
 		}
-		hasDir = hasDir || strings.Contains(v, "{dir}")
-	}
-	for _, f := range a.Dir.Inject.Flag {
-		hasDir = hasDir || strings.Contains(f, "{dir}")
-	}
-	if !hasDir {
-		return errors.New("dir.inject must reference {dir}")
+	} else {
+		hasDir := false
+		for _, f := range a.Dir.Inject.Flag {
+			hasDir = hasDir || strings.Contains(f, "{dir}")
+		}
+		if !hasDir {
+			return errors.New("dir.inject must reference {dir}")
+		}
 	}
 	if len(a.Login.Cmd) == 0 || a.Login.Cmd[0] != a.Bin {
 		return fmt.Errorf("login.cmd must start with %q", a.Bin)
@@ -208,6 +217,17 @@ func LoadRegistry(userDir string) (*Registry, error) {
 			return nil, err
 		}
 		r.byName[a.Name] = a
+	}
+	// Check for duplicate bins
+	binToName := make(map[string][]string)
+	for name, adapter := range r.byName {
+		binToName[adapter.Bin] = append(binToName[adapter.Bin], name)
+	}
+	for bin, names := range binToName {
+		if len(names) > 1 {
+			sort.Strings(names)
+			return nil, fmt.Errorf("adapters %q and %q both use bin %q", names[0], names[1], bin)
+		}
 	}
 	return r, nil
 }

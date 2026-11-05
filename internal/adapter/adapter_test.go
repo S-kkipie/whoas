@@ -50,21 +50,72 @@ func TestUserAdapterOverridesAndExpands(t *testing.T) {
 }
 
 func TestParseRejects(t *testing.T) {
-	cases := map[string]string{
-		"unknown key":   valid + "colour = \"blue\"\n",
-		"bad kind":      replace(valid, `kind = "dir-overlay"`, `kind = "env-token"`),
-		"abs auth":      replace(valid, `"auth.json", "nested/dir"`, `"/etc/passwd"`),
-		"dotdot auth":   replace(valid, `"auth.json", "nested/dir"`, `"../x"`),
-		"no dir ref":    replace(valid, `FAKE_DIR = "{dir}"`, `FAKE_DIR = "/tmp"`),
-		"both injects":  replace(valid, `inject     = { env = { FAKE_DIR = "{dir}" } }`, `inject     = { env = { FAKE_DIR = "{dir}" }, flag = ["--d", "{dir}"] }`),
-		"login bin":     replace(valid, `cmd = ["fake", "login"]`, `cmd = ["sh", "-c", "evil"]`),
-		"bin with path": replace(valid, `bin  = "fake"`, `bin  = "/usr/bin/fake"`),
-		"reserved name": replace(valid, `name = "fake"`, `name = "run"`),
+	_, err := Parse([]byte(valid), "valid")
+	require.NoError(t, err)
+
+	cases := map[string]struct {
+		body      string
+		errSubstr string
+	}{
+		"unknown key":   {valid + "colour = \"blue\"\n", "unknown keys"},
+		"bad kind":      {replace(valid, `kind = "dir-overlay"`, `kind = "env-token"`), "not supported"},
+		"abs auth":      {replace(valid, `"auth.json", "nested/dir"`, `"/etc/passwd"`), "clean relative slash path"},
+		"dotdot auth":   {replace(valid, `"auth.json", "nested/dir"`, `"../x"`), "clean relative slash path"},
+		"no dir ref":    {replace(valid, `FAKE_DIR = "{dir}"`, `FAKE_DIR = "/tmp"`), "must reference {dir}"},
+		"both injects":  {replace(valid, `inject     = { env = { FAKE_DIR = "{dir}" } }`, `inject     = { env = { FAKE_DIR = "{dir}" }, flag = ["--d", "{dir}"] }`), "exactly one"},
+		"login bin":     {replace(valid, `cmd = ["fake", "login"]`, `cmd = ["sh", "-c", "evil"]`), "must start with"},
+		"bin with path": {replace(valid, `bin  = "fake"`, `bin  = "/usr/bin/fake"`), "bare command name"},
+		"reserved name": {replace(valid, `name = "fake"`, `name = "run"`), "reserved"},
+		"bin -x":        {replace(valid, `bin  = "fake"`, `bin  = "-x"`), "bare command name"},
+		"bin ..":        {replace(valid, `bin  = "fake"`, `bin  = ".."`), "bare command name"},
+		"env not {dir}": {replace(valid, `inject     = { env = { FAKE_DIR = "{dir}" } }`, `inject     = { env = { FAKE_DIR = "{dir}", LD_PRELOAD = "/tmp/x.so" } }`), "must reference {dir}"},
+		"global /etc":   {replace(valid, `global     = "{home}/.fake"`, `global     = "/etc/fake"`), "must start with"},
+		"global rel":    {replace(valid, `global     = "{home}/.fake"`, `global     = "relative/x"`), "must start with"},
 	}
-	for name, body := range cases {
-		_, err := Parse([]byte(body), name)
-		require.Error(t, err, name)
+	for name, tc := range cases {
+		_, err := Parse([]byte(tc.body), name)
+		require.ErrorContains(t, err, tc.errSubstr, name)
 	}
 }
 
 func replace(s, old, new string) string { return strings.Replace(s, old, new, 1) }
+
+func TestUserOverridesBuiltinByName(t *testing.T) {
+	dir := t.TempDir()
+	userGH := `name = "gh"
+bin  = "gh"
+kind = "dir-overlay"
+[dir]
+global     = "{xdg_config}/my-gh"
+inject     = { env = { GH_CONFIG_DIR = "{dir}" } }
+auth_files = ["hosts.yml"]
+[login]
+cmd = ["gh", "auth", "login", "--insecure-storage"]
+[whoami]
+cmd  = ["gh", "api", "user"]
+json = "login"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "gh.toml"), []byte(userGH), 0o600))
+	r, err := LoadRegistry(dir)
+	require.NoError(t, err)
+	a, ok := r.Get("gh")
+	require.True(t, ok)
+	require.Equal(t, "{xdg_config}/my-gh", a.Dir.Global)
+}
+
+func TestDuplicateBinRejected(t *testing.T) {
+	dir := t.TempDir()
+	aaa := `name = "aaa"
+bin  = "gh"
+kind = "dir-overlay"
+[dir]
+global     = "{xdg_config}/aaa"
+inject     = { env = { AAA_CONFIG = "{dir}" } }
+auth_files = ["config.json"]
+[login]
+cmd = ["gh", "auth", "login"]
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aaa.toml"), []byte(aaa), 0o600))
+	_, err := LoadRegistry(dir)
+	require.ErrorContains(t, err, "both use bin")
+}
