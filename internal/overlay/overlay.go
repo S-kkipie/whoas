@@ -45,7 +45,7 @@ func Build(dir, global string, authPaths []string, files map[string]envelope.Fil
 	}
 	for rel, f := range files {
 		// Validate that rel is a local path inside an auth path.
-		p := filepath.FromSlash(rel)
+		p := filepath.Clean(filepath.FromSlash(rel))
 		if !filepath.IsLocal(p) {
 			return fmt.Errorf("envelope file %q is not a local path", rel)
 		}

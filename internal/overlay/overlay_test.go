@@ -165,6 +165,19 @@ func TestBuildRejectsNonLocalKey(t *testing.T) {
 	require.Contains(t, err.Error(), "not a local path")
 }
 
+func TestBuildRejectsDotDotInsideAuthKey(t *testing.T) {
+	g := globalFixture(t)
+	dir := filepath.Join(t.TempDir(), "ov")
+	files := map[string]envelope.File{
+		"auth.json/../a.txt": {Mode: 0o600, Data: []byte("bad")},
+	}
+	err := Build(dir, g, auth, files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside the adapter's auth_files")
+	// Global a.txt is untouched.
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+}
+
 func TestPromoteNonEXDEVErrorIsReturned(t *testing.T) {
 	rename = func(a, b string) error {
 		return &os.LinkError{Op: "rename", Old: a, New: b, Err: syscall.EPERM}
