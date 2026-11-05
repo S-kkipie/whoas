@@ -32,9 +32,9 @@ func newRunCmd() *cobra.Command {
 			if err != nil {
 				return &exitError{code: exitNotFound, err: err}
 			}
-			env := append(os.Environ(), "PATH="+pathList)
+			env := setEnv(os.Environ(), "PATH="+pathList)
 			if profile != "" {
-				env = append(env, "WHOAS_PROFILE="+profile)
+				env = setEnv(env, "WHOAS_PROFILE="+profile)
 			}
 			return &exitError{code: execReplace(bin, args, env)}
 		},

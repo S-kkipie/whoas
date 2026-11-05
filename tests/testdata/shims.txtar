@@ -35,8 +35,25 @@ stdout '^account=work$'
 stderr 'unknown profile "nope"'
 expect-exit 3 whoas run -- sh -c 'exit 3'
 
+# a pre-set WHOAS_PROFILE is replaced, not duplicated, by run -p
+env WHOAS_PROFILE=nope
+exec whoas run -p work -- sh -c 'fakecli whoami'
+stdout '^account=work$'
+env WHOAS_PROFILE=
+
 exec whoas shims ls
 stdout '^fakecli$'
+
+# foreign entries in the shims dir are left alone
+rm $WORK/data/shims/fakecli
+symlink $WORK/data/shims/fakecli -> /bin/true
+exec whoas shims install
+stderr 'skipping'
+exec whoas shims ls
+! stdout '^fakecli$'
+rm $WORK/data/shims/fakecli
+exec whoas shims install
+
 exec whoas shims uninstall
 stdout 'removed [0-9]+ shims'
 ! exists $WORK/data/shims/fakecli

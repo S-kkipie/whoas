@@ -38,9 +38,14 @@ func newShimsCmd() *cobra.Command {
 						continue // CLI not installed
 					}
 					link := filepath.Join(dir, a.Bin)
-					if info, err := os.Lstat(link); err == nil && info.Mode()&os.ModeSymlink != 0 {
-						if err := os.Remove(link); err != nil {
-							return err
+					if _, err := os.Lstat(link); err == nil {
+						if isShim(link) {
+							if err := os.Remove(link); err != nil {
+								return err
+							}
+						} else {
+							fmt.Fprintf(cmd.ErrOrStderr(), "whoas: skipping %s: %s exists and is not a whoas shim\n", a.Bin, link)
+							continue
 						}
 					}
 					if err := os.Symlink(target, link); err != nil {
@@ -102,7 +107,17 @@ func newShimsCmd() *cobra.Command {
 	return cmd
 }
 
-// shimLinks returns the symlinks in dir.
+// isShim returns true if path is a symlink to whoas or whoas.exe.
+func isShim(path string) bool {
+	target, err := os.Readlink(path)
+	if err != nil {
+		return false
+	}
+	base := filepath.Base(target)
+	return base == "whoas" || base == "whoas.exe"
+}
+
+// shimLinks returns the symlinks in dir that point to whoas.
 func shimLinks(dir string) ([]string, error) {
 	entries, err := os.ReadDir(dir)
 	if os.IsNotExist(err) {
@@ -114,7 +129,10 @@ func shimLinks(dir string) ([]string, error) {
 	var out []string
 	for _, en := range entries {
 		if en.Type()&os.ModeSymlink != 0 {
-			out = append(out, filepath.Join(dir, en.Name()))
+			fullPath := filepath.Join(dir, en.Name())
+			if isShim(fullPath) {
+				out = append(out, fullPath)
+			}
 		}
 	}
 	return out, nil
