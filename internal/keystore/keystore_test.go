@@ -4,6 +4,7 @@ package keystore
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -32,6 +33,68 @@ func TestSelect(t *testing.T) {
 
 	_, err = Select(dir, getenvFrom(map[string]string{"WHOAS_KEYSTORE": "nope"}))
 	require.ErrorContains(t, err, "unknown WHOAS_KEYSTORE")
+}
+
+func TestRememberWritesKind(t *testing.T) {
+	for want, s := range map[string]Store{
+		"os":         osStore{},
+		"wsl":        newWSLStore("/x/whoas.exe"),
+		"passphrase": newPassphraseStore(t.TempDir(), getenvFrom(nil)),
+	} {
+		dir := t.TempDir()
+		require.NoError(t, Remember(dir, s))
+		data, err := os.ReadFile(filepath.Join(dir, "keystore"))
+		require.NoError(t, err)
+		require.Equal(t, want+"\n", string(data))
+		fi, err := os.Stat(filepath.Join(dir, "keystore"))
+		require.NoError(t, err)
+		require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	}
+}
+
+func TestRememberSkipsEnvStore(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, Remember(dir, envStore{key: "k"}))
+	_, err := os.Stat(filepath.Join(dir, "keystore"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestSelectHonoursRemembered(t *testing.T) {
+	remember := func(t *testing.T, kind string) string {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "keystore"), []byte(kind+"\n"), 0o600))
+		return dir
+	}
+	// Auto-detect would pick the WSL bridge here; the remembered backend wins.
+	wslEnv := map[string]string{"WSL_DISTRO_NAME": "Ubuntu", "WHOAS_WIN_EXE": "/x/whoas.exe"}
+
+	s, err := Select(remember(t, "os"), getenvFrom(wslEnv))
+	require.NoError(t, err)
+	require.Equal(t, "os keyring", s.Name())
+
+	s, err = Select(remember(t, "passphrase"), getenvFrom(wslEnv))
+	require.NoError(t, err)
+	require.Contains(t, s.Name(), "passphrase")
+
+	s, err = Select(remember(t, "wsl"), getenvFrom(map[string]string{"WHOAS_WIN_EXE": "/x/whoas.exe"}))
+	require.NoError(t, err)
+	require.Contains(t, s.Name(), "wsl")
+
+	_, err = Select(remember(t, "wsl"), getenvFrom(nil))
+	require.EqualError(t, err, `keystore is "wsl" but whoas.exe was not found (set WHOAS_WIN_EXE)`)
+
+	// WHOAS_KEYSTORE and WHOAS_MASTER_KEY still override it.
+	s, err = Select(remember(t, "passphrase"), getenvFrom(map[string]string{"WHOAS_KEYSTORE": "os"}))
+	require.NoError(t, err)
+	require.Equal(t, "os keyring", s.Name())
+	s, err = Select(remember(t, "passphrase"), getenvFrom(map[string]string{"WHOAS_MASTER_KEY": "AGE-SECRET-KEY-1X"}))
+	require.NoError(t, err)
+	require.Equal(t, "env (WHOAS_MASTER_KEY)", s.Name())
+
+	for _, bad := range []string{"keychain", ""} {
+		_, err = Select(remember(t, bad), getenvFrom(wslEnv))
+		require.ErrorContains(t, err, "unknown keystore", "content %q", bad)
+	}
 }
 
 func TestEnvStore(t *testing.T) {

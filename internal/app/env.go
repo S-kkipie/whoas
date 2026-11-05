@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/S-kkipie/whoas/internal/adapter"
+	"github.com/S-kkipie/whoas/internal/agent"
 	"github.com/S-kkipie/whoas/internal/binpath"
 	"github.com/S-kkipie/whoas/internal/config"
 	"github.com/S-kkipie/whoas/internal/keysource"
@@ -56,10 +57,23 @@ func (e *env) initVault() (*vault.Vault, error) {
 	if err != nil {
 		return nil, err
 	}
-	return vault.Init(e.dirs.RecipientFile(), e.dirs.VaultDir(), st)
+	v, err := vault.Init(e.dirs.RecipientFile(), e.dirs.VaultDir(), st)
+	if err != nil {
+		return nil, err
+	}
+	if err := keystore.Remember(e.dirs.Data, st); err != nil {
+		return nil, err
+	}
+	return v, nil
 }
 
+// decrypter asks an unlocked agent first, so the hot path never selects (and
+// possibly probes) a keystore while one is running.
 func (e *env) decrypter() (vault.Decrypter, error) {
+	c := agent.NewClient(e.dirs.AgentSocket())
+	if locked, err := c.Status(); err == nil && !locked {
+		return c, nil
+	}
 	st, err := e.store()
 	if err != nil {
 		return nil, err

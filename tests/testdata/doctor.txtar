@@ -29,6 +29,17 @@ exec whoas doctor
 stdout '^agent\s+running \(unlocked\)$'
 exec whoas fakecli@work whoami
 stdout '^account=work$'
+
+# an unlocked agent serves runs without consulting the keystore at all
+# (an unusable WHOAS_KEYSTORE would fail keystore selection)
+env SAVED_KEY=$WHOAS_MASTER_KEY
+env WHOAS_MASTER_KEY=
+env WHOAS_KEYSTORE=nope
+exec whoas fakecli@work whoami
+stdout '^account=work$'
+env WHOAS_KEYSTORE=
+env WHOAS_MASTER_KEY=$SAVED_KEY
+
 exec whoas lock
 stdout '^locked$'
 exec whoas doctor
