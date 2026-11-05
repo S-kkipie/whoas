@@ -23,7 +23,6 @@ and inherit whatever global session happens to be active.
 | aws-vault / granted | AWS only |
 | `gh` native multi-account, `GH_TOKEN` | gh only; `gh auth switch` is global |
 | direnv / mise env | Plaintext tokens in files; no capture, no vault |
-| ccp (own, unimplemented) | Claude Code + MCP only → absorbed by whoas (M3) |
 
 **whoas = open-source, local, OS-keychain-backed identity layer for CLIs that
 captures OAuth sessions and works unattended for AI agents.**
@@ -393,8 +392,7 @@ aws-vault (exec + keyring), 1Password shell-plugins (env-var catalog, MIT).
   codex, neonctl, docker.
 - **M2 — Breadth:** vercel, wrangler, railway (experimental); `env-token` kind
   (supabase, terraform); catalog import from 1Password shell-plugins.
-- **M3 — Claude + MCP:** `json-slice` adapter; ccp archived, its spec kept as
-  reference.
+- **M3 — Claude + MCP:** `json-slice` adapter (`claude`, `mcp/<server>`).
 - **Phase 2:** Claude on macOS (keychain), native Windows shims, git identity,
   local audit log.
 
