@@ -15,6 +15,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/awnumar/memguard"
+	"github.com/gofrs/flock"
 
 	"github.com/S-kkipie/whoas/internal/vault"
 )
@@ -34,22 +35,30 @@ type Server struct {
 // NewServer returns a locked server.
 func NewServer() *Server { return &Server{now: time.Now, reapEvery: 30 * time.Second} }
 
-// Serve listens on socketPath (0600) until ctx is done.
+// Serve listens on socketPath (0600) until ctx is done. An exclusive flock on
+// socketPath+".lock", held for the agent's lifetime, makes it a singleton:
+// only the lock holder owns (and may remove) the socket path.
 func (s *Server) Serve(ctx context.Context, socketPath string) error {
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
 		return err
 	}
-	// Probe for an already-running agent.
-	if _, err := NewClient(socketPath).Status(); err == nil {
+	fl := flock.New(socketPath + ".lock")
+	ok, err := fl.TryLock()
+	if err != nil {
+		return err
+	}
+	if !ok {
 		return fmt.Errorf("agent already running on %s", socketPath)
 	}
-	_ = os.Remove(socketPath)
+	defer fl.Unlock()
+	_ = os.Remove(socketPath) // stale: its agent died without cleaning up
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
 		return err
 	}
+	defer os.Remove(socketPath) // runs before the unlock above
+	defer ln.Close()
 	if err := os.Chmod(socketPath, 0o600); err != nil {
-		ln.Close()
 		return err
 	}
 	// Start reaper goroutine.
@@ -67,11 +76,10 @@ func (s *Server) Serve(ctx context.Context, socketPath string) error {
 			}
 		}
 	}()
-	// Listener cleanup goroutine.
+	// Stop accepting (and forget the key) when ctx is done.
 	go func() {
 		<-ctx.Done()
 		ln.Close()
-		_ = os.Remove(socketPath)
 		s.mu.Lock()
 		s.key = nil
 		s.mu.Unlock()

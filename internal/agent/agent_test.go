@@ -125,6 +125,47 @@ func TestSecondAgentRefused(t *testing.T) {
 	require.True(t, locked)
 }
 
+func TestConcurrentAgentsSingleton(t *testing.T) {
+	sock := shortSocket(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	const n = 8
+	done := make(chan error, n)
+	start := make(chan struct{})
+	for range n {
+		go func() {
+			<-start
+			done <- NewServer().Serve(ctx, sock)
+		}()
+	}
+	close(start)
+	for range n - 1 {
+		select {
+		case err := <-done:
+			require.ErrorContains(t, err, "already running")
+		case <-time.After(3 * time.Second):
+			t.Fatal("losing agents did not return quickly")
+		}
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("a second agent returned too (%v): none is serving", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	_, err := NewClient(sock).Status()
+	require.NoError(t, err, "the winner serves")
+
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("agent did not stop")
+	}
+	_, err = os.Stat(sock)
+	require.ErrorIs(t, err, os.ErrNotExist, "socket removed on shutdown")
+}
+
 func TestDecryptRefreshesIdleTimer(t *testing.T) {
 	srv, c, _ := startServer(t)
 	now := time.Unix(1000, 0)
