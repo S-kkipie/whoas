@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -54,6 +55,17 @@ var customCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 		d, err := time.ParseDuration(args[0])
 		ts.Check(err)
 		time.Sleep(d)
+	},
+	// sigterm-bg — send SIGTERM to every background command of the script.
+	"sigterm-bg": func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) != 0 {
+			ts.Fatalf("usage: sigterm-bg")
+		}
+		for _, c := range ts.BackgroundCmds() {
+			if c.Process != nil {
+				ts.Check(c.Process.Signal(syscall.SIGTERM))
+			}
+		}
 	},
 	// expect-exit N cmd args... — run cmd and require exit code N.
 	"expect-exit": func(ts *testscript.TestScript, neg bool, args []string) {
