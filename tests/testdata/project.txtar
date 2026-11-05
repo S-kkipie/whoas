@@ -57,6 +57,11 @@ cp bad.yaml .whoas.yaml
 ! exec whoas trust
 stderr 'must be a string'
 
+# trust reads only a regular file, also when it is named explicitly
+mkdir notafile
+! exec whoas trust notafile
+stderr 'not a regular file'
+
 -- proj/.whoas.yaml --
 profile: work
 -- proj/other.yaml --

@@ -139,9 +139,19 @@ func (e *env) resolveIdentity(req runRequest) (resolve.Result, error) {
 	return res, err
 }
 
-// trustedProject returns the nearest trusted .whoas.yaml. An untrusted file
-// is an error, or a warning (and ignored) when warnOnly is set (shims).
+// trustedProject returns the nearest trusted .whoas.yaml. A file that cannot
+// be read, is untrusted or does not parse is an error, or a warning (and the
+// file is ignored) when warnOnly is set: a shim must never break on it.
 func (e *env) trustedProject(warnOnly bool) (*project.File, error) {
+	pf, err := e.findTrustedProject()
+	if err != nil && warnOnly {
+		fmt.Fprintln(os.Stderr, "whoas: warning:", err)
+		return nil, nil
+	}
+	return pf, err
+}
+
+func (e *env) findTrustedProject() (*project.File, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -150,7 +160,7 @@ func (e *env) trustedProject(warnOnly bool) (*project.File, error) {
 	if err != nil || path == "" {
 		return nil, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := project.Read(path)
 	if err != nil {
 		return nil, err
 	}
@@ -159,12 +169,7 @@ func (e *env) trustedProject(warnOnly bool) (*project.File, error) {
 		return nil, err
 	}
 	if !ts.IsTrusted(path, data) {
-		msg := fmt.Errorf("%s is not trusted (review it, then run: whoas trust)", path)
-		if warnOnly {
-			fmt.Fprintln(os.Stderr, "whoas: warning:", msg)
-			return nil, nil
-		}
-		return nil, msg
+		return nil, fmt.Errorf("%s is not trusted (review it, then run: whoas trust)", path)
 	}
 	return project.Parse(path, data)
 }

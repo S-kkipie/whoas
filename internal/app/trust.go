@@ -50,7 +50,7 @@ func newTrustCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			data, err := os.ReadFile(path)
+			data, err := project.Read(path)
 			if err != nil {
 				return err
 			}

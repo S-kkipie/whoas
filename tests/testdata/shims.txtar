@@ -28,6 +28,21 @@ stdout '^account=global$'
 stderr 'warning: .*not trusted'
 cd $WORK
 
+# a hostile .whoas.yaml never breaks a shim: a directory is skipped, and a
+# file whoas cannot use (here: a corrupt trust store) only warns
+mkdir hostile/.whoas.yaml
+cd hostile
+exec fakecli whoami
+stdout '^account=global$'
+cd $WORK
+cp corrupt-trust.json $WORK/data/trust.json
+cd proj
+exec fakecli whoami
+stdout '^account=global$'
+stderr 'warning: .*trust\.json'
+cd $WORK
+rm $WORK/data/trust.json
+
 # whoas run: every nested call goes through the shims with the profile
 exec whoas run -p work -- sh -c 'fakecli whoami'
 stdout '^account=work$'
@@ -60,3 +75,5 @@ stdout 'removed [0-9]+ shims'
 
 -- proj/.whoas.yaml --
 profile: work
+-- corrupt-trust.json --
+{not json
