@@ -11,12 +11,17 @@ import (
 	"path/filepath"
 
 	"github.com/goccy/go-yaml"
+	"github.com/goccy/go-yaml/lexer"
+	"github.com/goccy/go-yaml/token"
 
 	"github.com/S-kkipie/whoas/internal/ref"
 )
 
 // FileName is the project file name.
 const FileName = ".whoas.yaml"
+
+// maxFileSize is the maximum allowed project file size (64 KiB).
+const maxFileSize = 64 << 10
 
 // File is a parsed project file.
 type File struct {
@@ -48,6 +53,14 @@ func Find(start string) (string, error) {
 
 // Parse validates data against the whitelist schema.
 func Parse(path string, data []byte) (*File, error) {
+	if len(data) > maxFileSize {
+		return nil, fmt.Errorf("%s: file too large (max 64 KiB)", path)
+	}
+	for _, tk := range lexer.Tokenize(string(data)) {
+		if tk.Type == token.AnchorType || tk.Type == token.AliasType {
+			return nil, fmt.Errorf("%s: YAML anchors and aliases are not allowed", path)
+		}
+	}
 	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("%s: invalid YAML: %w", path, err)

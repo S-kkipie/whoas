@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 
@@ -29,7 +30,13 @@ func Load(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s, json.Unmarshal(data, &s.entries)
+	if err := json.Unmarshal(data, &s.entries); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if s.entries == nil {
+		s.entries = map[string]string{}
+	}
+	return s, nil
 }
 
 // Hash is the sha256 of data in hex.

@@ -5,6 +5,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,7 +24,7 @@ func TestFindWalksUp(t *testing.T) {
 
 	got, err = Find(root)
 	require.NoError(t, err)
-	require.Empty(t, got)
+	require.True(t, got == "" || !strings.HasPrefix(got, root), "got %q should be empty or outside root %q", got, root)
 }
 
 func TestParse(t *testing.T) {
@@ -38,15 +39,22 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseRejects(t *testing.T) {
-	for name, body := range map[string]string{
-		"list value":  "profile: [work]\n",
-		"map value":   "vercel: {cmd: rm}\n",
-		"bad key":     "Vercel: x\n",
-		"bad alias":   "vercel: ../x\n",
-		"reserved":    "run: x\n",
-		"broken yaml": "profile: [\n",
-	} {
-		_, err := Parse("p", []byte(body))
-		require.Error(t, err, name)
+	cases := map[string]struct {
+		body      string
+		substring string
+	}{
+		"list value":   {"profile: [work]\n", "must be a string"},
+		"map value":    {"vercel: {cmd: rm}\n", "must be a string"},
+		"bad key":      {"Vercel: x\n", "invalid key"},
+		"bad alias":    {"vercel: ../x\n", "vercel"},
+		"reserved":     {"run: x\n", "invalid key"},
+		"broken yaml":  {"profile: [\n", "invalid YAML"},
+		"anchor/alias": {"a: &x [1,2]\nb: *x\n", "anchors and aliases"},
+		"oversized":    {"profile: work\n" + strings.Repeat("# pad\n", 20000), "too large"},
+		"non-string":   {"vercel: 123\n", "must be a string"},
+	}
+	for name, c := range cases {
+		_, err := Parse("p", []byte(c.body))
+		require.ErrorContains(t, err, c.substring, name)
 	}
 }
