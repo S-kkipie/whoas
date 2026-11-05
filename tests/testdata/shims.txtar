@@ -48,7 +48,19 @@ exec whoas run -p work -- sh -c 'fakecli whoami'
 stdout '^account=work$'
 ! exec whoas run -p nope -- true
 stderr 'unknown profile "nope"'
+expect-exit 125 whoas run -p nope -- true
 expect-exit 3 whoas run -- sh -c 'exit 3'
+
+# whoas run takes a command given by path, as is
+chmod 755 tool.sh
+exec whoas run -p work -- ./tool.sh
+stdout '^account=work$'
+expect-exit 127 whoas run -- ./missing.sh
+
+# whoas's own failures in run exit 125
+env WHOAS_CONFIG_DIR=$WORK/badcfg
+expect-exit 125 whoas run -- true
+env WHOAS_CONFIG_DIR=$WORK/cfg
 
 # a pre-set WHOAS_PROFILE is replaced, not duplicated, by run -p
 env WHOAS_PROFILE=nope
@@ -77,3 +89,8 @@ stdout 'removed [0-9]+ shims'
 profile: work
 -- corrupt-trust.json --
 {not json
+-- tool.sh --
+#!/bin/sh
+exec fakecli whoami
+-- badcfg/config.yaml --
+profiles: [

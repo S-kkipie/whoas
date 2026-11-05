@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -20,16 +21,20 @@ func newRunCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := loadEnv()
 			if err != nil {
-				return err
+				return &exitError{code: exitWhoasError, err: err}
 			}
 			if profile != "" {
 				if _, ok := e.cfg.Profile(profile); !ok {
-					return fmt.Errorf("unknown profile %q", profile)
+					return &exitError{code: exitWhoasError, err: fmt.Errorf("unknown profile %q", profile)}
 				}
 			}
 			pathList := e.dirs.ShimsDir() + string(os.PathListSeparator) + os.Getenv("PATH")
-			bin, err := binpath.Find(args[0], pathList, "", "")
-			if err != nil {
+			bin := args[0]
+			if !strings.ContainsRune(bin, '/') && !strings.ContainsRune(bin, os.PathSeparator) {
+				if bin, err = binpath.Find(args[0], pathList, "", ""); err != nil {
+					return &exitError{code: exitNotFound, err: err}
+				}
+			} else if _, err := os.Stat(bin); err != nil {
 				return &exitError{code: exitNotFound, err: err}
 			}
 			env := setEnv(os.Environ(), "PATH="+pathList)
