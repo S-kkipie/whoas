@@ -1,6 +1,7 @@
 package app
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,4 +31,14 @@ func TestLeadingProfile(t *testing.T) {
 		require.Equal(t, c.profile, p)
 		require.Equal(t, c.rest, rest)
 	}
+}
+
+// keystore-helper prints the master key; only whoas.exe (Windows) serves it.
+func TestKeystoreHelperOnlyOnWindows(t *testing.T) {
+	_, _, err := newRoot().Find([]string{"keystore-helper"})
+	if runtime.GOOS == "windows" {
+		require.NoError(t, err)
+		return
+	}
+	require.Error(t, err, "keystore-helper is not registered outside Windows")
 }
