@@ -1,0 +1,45 @@
+# Shims give nested and agent-launched CLI calls the right identity.
+env FAKECLI_LOGIN_AS=global
+exec fakecli login
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work
+exec whoas profile set work fakecli@work
+
+exec whoas shims install
+stdout '^shims: .*fakecli'
+stdout 'export PATH='
+exists $WORK/data/shims/fakecli
+
+# a shim with nothing resolved is the real CLI on the global session
+env PATH=$WORK/data/shims:$PATH
+exec fakecli whoami
+stdout '^account=global$'
+
+# WHOAS_PROFILE makes the shim supervise as the profile's identity
+env WHOAS_PROFILE=work
+exec fakecli whoami
+stdout '^account=work$'
+env WHOAS_PROFILE=
+
+# an untrusted project file only warns through a shim
+cd proj
+exec fakecli whoami
+stdout '^account=global$'
+stderr 'warning: .*not trusted'
+cd $WORK
+
+# whoas run: every nested call goes through the shims with the profile
+exec whoas run -p work -- sh -c 'fakecli whoami'
+stdout '^account=work$'
+! exec whoas run -p nope -- true
+stderr 'unknown profile "nope"'
+expect-exit 3 whoas run -- sh -c 'exit 3'
+
+exec whoas shims ls
+stdout '^fakecli$'
+exec whoas shims uninstall
+stdout 'removed [0-9]+ shims'
+! exists $WORK/data/shims/fakecli
+
+-- proj/.whoas.yaml --
+profile: work
