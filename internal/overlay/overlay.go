@@ -5,10 +5,13 @@ package overlay
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 
 	"github.com/S-kkipie/whoas/internal/envelope"
 )
@@ -27,6 +30,7 @@ func split(authPaths []string) (auth, ancestors map[string]bool) {
 }
 
 // Build creates dir mirroring global, then writes files (slash paths).
+// dir must be fresh (missing or empty); on error the caller removes it.
 func Build(dir, global string, authPaths []string, files map[string]envelope.File) error {
 	global, err := filepath.Abs(global)
 	if err != nil {
@@ -40,15 +44,36 @@ func Build(dir, global string, authPaths []string, files map[string]envelope.Fil
 		return err
 	}
 	for rel, f := range files {
-		p := filepath.Join(dir, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		// Validate that rel is a local path inside an auth path.
+		p := filepath.FromSlash(rel)
+		if !filepath.IsLocal(p) {
+			return fmt.Errorf("envelope file %q is not a local path", rel)
+		}
+		// Check that p matches or is under an auth path.
+		found := false
+		for a := range auth {
+			if p == a || strings.HasPrefix(p, a+string(filepath.Separator)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("envelope file %q is outside the adapter's auth_files", rel)
+		}
+		// Construct the full path and check for symlinks.
+		target := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return err
+		}
+		// Refuse to write through a symlink.
+		if info, err := os.Lstat(target); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("refusing to write %s through a symlink", target)
 		}
 		mode := os.FileMode(f.Mode) & 0o777
 		if mode == 0 {
 			mode = 0o600
 		}
-		if err := os.WriteFile(p, f.Data, mode); err != nil {
+		if err := os.WriteFile(target, f.Data, mode); err != nil {
 			return err
 		}
 	}
@@ -183,14 +208,26 @@ func promote(dir, global, rel string, auth, anc map[string]bool) error {
 	return nil
 }
 
-// move renames, falling back to copy+delete across filesystems (tmpfs → home).
+// move renames src to dst, falling back to copy+delete across filesystems (tmpfs → home).
+// two overlays promoting the same new path at the same instant: last writer wins;
+// pre-existing global data is never deleted.
 func move(src, dst string) error {
-	if err := rename(src, dst); err == nil {
+	err := rename(src, dst)
+	if err == nil {
 		return nil
 	}
-	if err := copyTree(src, dst); err != nil {
-		os.RemoveAll(dst)
+	if !errors.Is(err, syscall.EXDEV) {
 		return err
+	}
+	// Rename failed with cross-device link; copy to a temp name, then move into place.
+	tmp := fmt.Sprintf("%s.whoas-tmp-%d", dst, os.Getpid())
+	if err := copyTree(src, tmp); err != nil {
+		os.RemoveAll(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.RemoveAll(tmp)
+		// Pre-existing global entry won; continue cleanup.
 	}
 	return os.RemoveAll(src)
 }

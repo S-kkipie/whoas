@@ -121,6 +121,12 @@ func TestPromoteCrossDevice(t *testing.T) {
 	require.Equal(t, "v", read(t, filepath.Join(g, "settings", "k.txt")))
 	_, err := os.Stat(filepath.Join(dir, "settings"))
 	require.True(t, os.IsNotExist(err))
+	// Ensure no temporary files remain.
+	entries, err := os.ReadDir(g)
+	require.NoError(t, err)
+	for _, e := range entries {
+		require.NotContains(t, e.Name(), ".whoas-tmp-", "temporary files should be cleaned up")
+	}
 }
 
 func TestRemoveDoesNotFollowLinks(t *testing.T) {
@@ -128,5 +134,47 @@ func TestRemoveDoesNotFollowLinks(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "ov")
 	require.NoError(t, Build(dir, g, auth, nil))
 	require.NoError(t, Remove(dir))
+	// Overlay is deleted; global is untouched.
+	_, err := os.Stat(dir)
+	require.True(t, os.IsNotExist(err), "overlay dir should be deleted")
 	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+	require.Equal(t, "shared-b", read(t, filepath.Join(g, "sub", "b.txt")))
+}
+
+func TestBuildRejectsKeysOutsideAuth(t *testing.T) {
+	g := globalFixture(t)
+	dir := filepath.Join(t.TempDir(), "ov")
+	files := map[string]envelope.File{
+		"a.txt": {Mode: 0o600, Data: []byte("bad")},
+	}
+	err := Build(dir, g, auth, files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "outside the adapter's auth_files")
+	// Global a.txt is untouched.
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+}
+
+func TestBuildRejectsNonLocalKey(t *testing.T) {
+	g := globalFixture(t)
+	dir := filepath.Join(t.TempDir(), "ov")
+	files := map[string]envelope.File{
+		"../escape": {Mode: 0o600, Data: []byte("bad")},
+	}
+	err := Build(dir, g, auth, files)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not a local path")
+}
+
+func TestPromoteNonEXDEVErrorIsReturned(t *testing.T) {
+	rename = func(a, b string) error {
+		return &os.LinkError{Op: "rename", Old: a, New: b, Err: syscall.EPERM}
+	}
+	t.Cleanup(func() { rename = os.Rename })
+	g := t.TempDir()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "settings", "k.txt"), "v")
+	err := Promote(dir, g, auth)
+	require.Error(t, err)
+	// Source file must still exist after the error.
+	require.Equal(t, "v", read(t, filepath.Join(dir, "settings", "k.txt")))
 }
