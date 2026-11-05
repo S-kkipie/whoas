@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	filippo.io/age v1.3.2
 	github.com/adrg/xdg v0.5.3
+	github.com/goccy/go-yaml v1.19.2
 	github.com/rogpeppe/go-internal v1.16.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
