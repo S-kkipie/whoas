@@ -57,7 +57,8 @@ sharing, token rotation, enterprise secret managers, Claude Code on macOS
 
 ## Resolution
 
-For provider P, first match wins:
+For provider P, the first context source that is **present** decides — no
+fallthrough (a present source that maps no identity for P means unresolved):
 
 1. Explicit `P@alias`.
 2. `-p <profile>` flag.
@@ -138,6 +139,8 @@ Paths resolved through `adrg/xdg` (macOS/Windows equivalents).
 
 ### Master key source (`whoas init`, implicit on first `add`)
 
+0. `WHOAS_MASTER_KEY` env var (CI, containers, tests; read-only). `WHOAS_KEYSTORE=os|wsl|passphrase`
+   forces a backend.
 1. macOS Keychain
 2. Windows Credential Manager (native build)
 3. **WSL** → `whoas.exe` (Windows build, same repo) invoked via interop, which
@@ -190,8 +193,8 @@ cmd = ["vercel", "whoami"]
 
 | Kind | Mechanism | MVP providers |
 |---|---|---|
-| `dir-overlay` (env) | env var points CLI at overlay dir | gh `GH_CONFIG_DIR`, gcloud `CLOUDSDK_CONFIG`, codex `CODEX_HOME`, neonctl `NEONCTL_CONFIG_DIR`, docker `DOCKER_CONFIG` |
-| `dir-overlay` (flag) | flag prepended to argv | vercel `--global-config` (Windows binary under WSL → `wslpath -w`) |
+| `dir-overlay` (env) | env var points CLI at overlay dir | gh `GH_CONFIG_DIR`, gcloud `CLOUDSDK_CONFIG`, codex `CODEX_HOME`; docker `DOCKER_CONFIG` (M2 — Docker Desktop's `credsStore` keeps creds outside the dir) |
+| `dir-overlay` (flag) | flag prepended to argv | neonctl `--config-dir` (it has no env var); vercel `--global-config` (Windows binary under WSL → `wslpath -w`) |
 | `dir-overlay` (xdg/home) | `XDG_CONFIG_HOME` / `HOME` points at overlay root | wrangler (auth `.wrangler/config/default.toml`); railway (`HOME`, **experimental**) |
 | `env-token` | secret injected as env var; captured via hidden prompt | supabase `SUPABASE_ACCESS_TOKEN`, terraform `TF_TOKEN_*`, + catalog generated from 1Password shell-plugins (MIT, attributed) |
 | `json-slice` | Go built-in | `claude`, `mcp/<server>` |
@@ -256,9 +259,10 @@ The global dir is read, never written.
    processes share one dir and the CLI handles its own concurrent refresh as it
    does with its global dir today. Append own PID, release lock (held ms only).
 3. **Spawn** real binary with injected args + user args verbatim, inherited
-   stdio (TTY intact), env + injected vars. Ignore SIGINT/SIGQUIT (terminal
-   delivers them to the child's process group); forward SIGTERM/SIGHUP
-   (sudo / aws-vault model).
+   stdio (TTY intact), env + injected vars. SIGTERM/SIGHUP are always
+   forwarded. SIGINT/SIGQUIT are forwarded only when whoas is **not** in a
+   terminal's foreground process group (agents, CI, process managers); in an
+   interactive terminal the tty already delivered them to the child.
 4. **Seal-on-write**: `fsnotify/fsnotify` watches materialized auth files;
    debounce 200ms → seal with public key. Refreshed tokens reach the vault while
    the process runs, surviving crashes and reboots even though overlays live on
@@ -304,8 +308,12 @@ whoas run -p work -- claude
 ### Errors (all before spawn; CLI never runs)
 
 Unknown identity · untrusted `.whoas.yaml` with explicit invocation · keystore /
-agent unreachable · lock busy > 10s (`identity busy: pid X`) · real binary not
+agent unreachable · lock busy > 10s (`identity busy`) · real binary not
 found · adapter TOML invalid.
+
+Exit codes: the CLI's own code passes through (death by signal is re-raised on
+whoas). whoas failures on the run path exit 125, exec failure 126, CLI not
+found 127 (`env`/docker convention); subcommand errors exit 1.
 
 ## Security
 
@@ -331,8 +339,10 @@ found · adapter TOML invalid.
 
 ### Invariants
 
-- Global CLI dirs are byte-identical before/after any whoas command (except
-  unmanaged Claude MCP slices, see above).
+- Global CLI **auth files** are byte-identical before/after any whoas command
+  (except unmanaged Claude MCP slices, see above). Non-auth state is shared on
+  purpose: overlay symlinks write through, and new non-auth entries a CLI
+  creates in an overlay are promoted to the global dir when absent there.
 - No secret value ever appears in whoas stdout/stderr.
 - No shell interpolation; `os/exec` with argv only.
 
@@ -389,8 +399,8 @@ aws-vault (exec + keyring), 1Password shell-plugins (env-var catalog, MIT).
 - **M1 — Core:** vault + keystores (+ `whoas.exe` WSL bridge) + agent;
   config/profiles/resolver/trust; supervisor (lock, refcount, overlay,
   seal-on-write, recovery); shims + `run`; `doctor`. Adapters: gh, gcloud,
-  codex, neonctl, docker.
-- **M2 — Breadth:** vercel, wrangler, railway (experimental); `env-token` kind
+  codex, neonctl. Plan: `docs/superpowers/plans/2026-11-05-whoas-m1-core.md`.
+- **M2 — Breadth:** vercel, wrangler, railway (experimental), docker; `env-token` kind
   (supabase, terraform); catalog import from 1Password shell-plugins.
 - **M3 — Claude + MCP:** `json-slice` adapter (`claude`, `mcp/<server>`).
 - **Phase 2:** Claude on macOS (keychain), native Windows shims, git identity,
