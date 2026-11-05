@@ -40,30 +40,23 @@ func Select(dataDir string, getenv func(string) string) (Store, error) {
 	if k := getenv("WHOAS_MASTER_KEY"); k != "" {
 		return envStore{key: k}, nil
 	}
-	if v := getenv("WHOAS_KEYSTORE"); v != "" {
-		switch v {
-		case "os", "passphrase", "wsl":
-			return named(v, dataDir, getenv)
+	switch v := getenv("WHOAS_KEYSTORE"); v {
+	case "":
+	case "os":
+		return osStore{}, nil
+	case "passphrase":
+		return newPassphraseStore(dataDir, getenv), nil
+	case "wsl":
+		exe, err := findWinExe(getenv)
+		if err != nil {
+			return nil, err
 		}
+		return newWSLStore(exe), nil
+	default:
 		return nil, fmt.Errorf("unknown WHOAS_KEYSTORE %q (os|wsl|passphrase)", v)
 	}
-	path := filepath.Join(dataDir, rememberFile)
-	data, err := os.ReadFile(path)
-	if err == nil {
-		switch kind := strings.TrimSpace(string(data)); kind {
-		case "os", "passphrase":
-			return named(kind, dataDir, getenv)
-		case "wsl":
-			exe, err := findWinExe(getenv)
-			if err != nil {
-				return nil, errors.New(`keystore is "wsl" but whoas.exe was not found (set WHOAS_WIN_EXE)`)
-			}
-			return newWSLStore(exe), nil
-		default:
-			return nil, fmt.Errorf("%s: unknown keystore %q (os|wsl|passphrase)", path, kind)
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return nil, err
+	if s, err := remembered(dataDir, getenv); s != nil || err != nil {
+		return s, err
 	}
 	if isWSL(getenv) {
 		if exe, err := findWinExe(getenv); err == nil {
@@ -76,19 +69,30 @@ func Select(dataDir string, getenv func(string) string) (Store, error) {
 	return newPassphraseStore(dataDir, getenv), nil
 }
 
-// named returns the backend called kind (os, wsl or passphrase).
-func named(kind, dataDir string, getenv func(string) string) (Store, error) {
-	switch kind {
+// remembered returns the backend recorded by Remember, or nil when none is.
+func remembered(dataDir string, getenv func(string) string) (Store, error) {
+	path := filepath.Join(dataDir, rememberFile)
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch kind := strings.TrimSpace(string(data)); kind {
 	case "os":
 		return osStore{}, nil
+	case "passphrase":
+		return newPassphraseStore(dataDir, getenv), nil
 	case "wsl":
 		exe, err := findWinExe(getenv)
 		if err != nil {
-			return nil, err
+			return nil, errors.New(`keystore is "wsl" but whoas.exe was not found (set WHOAS_WIN_EXE)`)
 		}
 		return newWSLStore(exe), nil
+	default:
+		return nil, fmt.Errorf("%s: unknown keystore %q (os|wsl|passphrase)", path, kind)
 	}
-	return newPassphraseStore(dataDir, getenv), nil
 }
 
 // Remember records s as the backend in <dataDir>/keystore so later runs use
