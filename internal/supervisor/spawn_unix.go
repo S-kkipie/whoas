@@ -22,7 +22,7 @@ func (p *Plan) spawn() (Result, error) {
 	forwardAll := !terminalDelivers()
 	argv := append(p.Adapter.InjectArgs(p.RunBase), p.Args...)
 	cmd := exec.Command(p.Bin, argv...)
-	cmd.Env = append(append([]string{}, p.Env...), p.Adapter.InjectEnv(p.RunBase)...)
+	cmd.Env = p.Adapter.ChildEnv(p.Env, p.RunBase)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Stdin, p.Stdout, p.Stderr
 
 	sigs := make(chan os.Signal, 4)

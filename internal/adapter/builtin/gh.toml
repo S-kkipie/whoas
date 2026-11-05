@@ -1,6 +1,7 @@
 name = "gh"
 bin  = "gh"
 kind = "dir-overlay"
+unset_env = ["GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]
 
 [dir]
 global     = "{xdg_config}/gh"

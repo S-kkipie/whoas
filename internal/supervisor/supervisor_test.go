@@ -243,3 +243,11 @@ func TestPromoteFailureIsAWarning(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "overlay removed despite promote failure")
 	require.Contains(t, stderr.String(), "could not share new non-auth files")
 }
+
+func TestUnsetEnvRemovedFromChild(t *testing.T) {
+	f := newFixture(t, `echo "token=${FAKE_TOKEN:-unset}"`)
+	f.plan.Adapter.UnsetEnv = []string{"FAKE_TOKEN"}
+	f.plan.Env = append(os.Environ(), "FAKE_TOKEN=leak")
+	_, out := run(t, f.plan)
+	require.Equal(t, "token=unset\n", out)
+}

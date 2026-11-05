@@ -1,6 +1,7 @@
 name = "neonctl"
 bin  = "neonctl"
 kind = "dir-overlay"
+unset_env = ["NEON_API_KEY"]
 
 [dir]
 global     = "{xdg_config}/neonctl"

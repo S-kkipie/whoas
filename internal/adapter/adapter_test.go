@@ -119,3 +119,22 @@ cmd = ["gh", "auth", "login"]
 	_, err := LoadRegistry(dir)
 	require.ErrorContains(t, err, "both use bin")
 }
+
+func TestChildEnv(t *testing.T) {
+	a, err := Parse([]byte(strings.Replace(valid, `kind = "dir-overlay"`, "kind = \"dir-overlay\"\nunset_env = [\"FAKE_TOKEN\"]", 1)), "t")
+	require.NoError(t, err)
+	got := a.ChildEnv([]string{"PATH=/bin", "FAKE_TOKEN=leak", "FAKE_DIR=/global", "FAKE_TOKENX=keep"}, "/ov")
+	require.Equal(t, []string{"PATH=/bin", "FAKE_DIR=/global", "FAKE_TOKENX=keep", "FAKE_DIR=/ov"}, got)
+
+	_, err = Parse([]byte(strings.Replace(valid, `kind = "dir-overlay"`, "kind = \"dir-overlay\"\nunset_env = [\"bad-name\"]", 1)), "t")
+	require.ErrorContains(t, err, "unset_env name")
+}
+
+func TestBuiltinUnsetEnv(t *testing.T) {
+	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
+	require.NoError(t, err)
+	gh, _ := r.Get("gh")
+	require.Contains(t, gh.UnsetEnv, "GH_TOKEN")
+	neon, _ := r.Get("neonctl")
+	require.Equal(t, []string{"NEON_API_KEY"}, neon.UnsetEnv)
+}

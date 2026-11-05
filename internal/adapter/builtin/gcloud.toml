@@ -1,6 +1,7 @@
 name = "gcloud"
 bin  = "gcloud"
 kind = "dir-overlay"
+unset_env = ["CLOUDSDK_CORE_ACCOUNT", "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE", "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"]
 
 [dir]
 global = "{home}/.config/gcloud"

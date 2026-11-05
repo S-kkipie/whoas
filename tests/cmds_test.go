@@ -20,6 +20,7 @@ import (
 const fakeAdapter = `name = "fakecli"
 bin  = "fakecli"
 kind = "dir-overlay"
+unset_env = ["FAKECLI_TOKEN"]
 
 [dir]
 global     = "{home}/.fakecli"

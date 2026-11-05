@@ -6,6 +6,7 @@
 //
 //	login          write auth.json for account $FAKECLI_LOGIN_AS (default "default")
 //	whoami         print "account=<name>"; exit 3 when not logged in
+//	               ($FAKECLI_TOKEN set → "account=envtoken", like GH_TOKEN overriding gh)
 //	token          print "token=<token>"
 //	refresh        rotate the token (gen+1) via write-to-temp + rename
 //	dir            print "dir=<config dir>"
@@ -109,6 +110,10 @@ func main() {
 			}
 			writeAuth(auth{Account: name})
 		case "whoami":
+			if os.Getenv("FAKECLI_TOKEN") != "" {
+				fmt.Println("account=envtoken")
+				continue
+			}
 			fmt.Printf("account=%s\n", mustAuth().Account)
 		case "token":
 			fmt.Printf("token=%s\n", mustAuth().Token)

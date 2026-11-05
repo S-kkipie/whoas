@@ -20,7 +20,7 @@ import (
 // runIn runs bin with the adapter's injection pointing at dir.
 func runIn(a *adapter.Adapter, bin, dir string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	c := exec.Command(bin, append(a.InjectArgs(dir), args...)...)
-	c.Env = append(os.Environ(), a.InjectEnv(dir)...)
+	c.Env = a.ChildEnv(os.Environ(), dir)
 	c.Stdin, c.Stdout, c.Stderr = stdin, stdout, stderr
 	return c.Run()
 }

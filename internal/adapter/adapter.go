@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -34,6 +35,9 @@ type Adapter struct {
 	Dir    DirSpec `toml:"dir"`
 	Login  Login   `toml:"login"`
 	Whoami Whoami  `toml:"whoami"`
+	// UnsetEnv lists env vars removed from the CLI's environment because they
+	// would override the identity (e.g. GH_TOKEN for gh).
+	UnsetEnv []string `toml:"unset_env"`
 }
 
 // DirSpec says where the session lives and how to redirect the CLI.
@@ -145,6 +149,11 @@ func (a *Adapter) Validate() error {
 	if len(a.Whoami.Cmd) > 0 && a.Whoami.Cmd[0] != a.Bin {
 		return fmt.Errorf("whoami.cmd must start with %q", a.Bin)
 	}
+	for _, k := range a.UnsetEnv {
+		if !envNameRe.MatchString(k) {
+			return fmt.Errorf("unset_env name %q invalid", k)
+		}
+	}
 	return nil
 }
 
@@ -177,6 +186,19 @@ func (a *Adapter) InjectEnv(dir string) []string {
 		out[i] = k + "=" + Expand(a.Dir.Inject.Env[k], Vars{}, dir)
 	}
 	return out
+}
+
+// ChildEnv is base without the adapter's UnsetEnv vars, plus InjectEnv(dir)
+// (injected values win over inherited ones).
+func (a *Adapter) ChildEnv(base []string, dir string) []string {
+	out := make([]string, 0, len(base)+len(a.Dir.Inject.Env))
+	for _, kv := range base {
+		k, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(a.UnsetEnv, k) {
+			out = append(out, kv)
+		}
+	}
+	return append(out, a.InjectEnv(dir)...)
 }
 
 //go:embed builtin/*.toml

@@ -79,6 +79,14 @@ sleep 500ms
 stderr 'fakecli@work is in use by pid'
 wait
 
+# env vars that would override the identity are removed from the CLI's env
+env FAKECLI_TOKEN=global-override
+exec fakecli whoami
+stdout '^account=envtoken$'
+exec whoas fakecli@work whoami
+stdout '^account=work$'
+env FAKECLI_TOKEN=
+
 # the global session was never modified
 unchanged $HOME/.fakecli/auth.json g
 exec fakecli whoami
