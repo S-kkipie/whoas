@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -75,6 +77,23 @@ func (f *fixture) vaultAuth(t *testing.T) string {
 	return string(env.Files["auth.json"].Data)
 }
 
+func (f *fixture) vaultAuthOrEmpty(t *testing.T) string {
+	t.Helper()
+	env, err := f.plan.Vault.Load(f.plan.Ref, f.dec)
+	if err != nil {
+		return ""
+	}
+	return string(env.Files["auth.json"].Data)
+}
+
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	err := cmd.Run()
+	require.NoError(t, err)
+	return cmd.ProcessState.Pid()
+}
+
 func run(t *testing.T, p Plan) (Result, string) {
 	t.Helper()
 	var out bytes.Buffer
@@ -106,7 +125,7 @@ func TestSealOnWriteDuringRun(t *testing.T) {
 		_, err := Run(context.Background(), f.plan)
 		done <- err
 	}()
-	require.Eventually(t, func() bool { return f.vaultAuth(t) == "v2" }, 900*time.Millisecond, 20*time.Millisecond,
+	require.Eventually(t, func() bool { return f.vaultAuthOrEmpty(t) == "v2" }, 900*time.Millisecond, 20*time.Millisecond,
 		"sealed while the CLI is still running")
 	require.NoError(t, <-done)
 }
@@ -118,11 +137,16 @@ func TestRecoversCrashedOverlay(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(f.plan.RunBase, "auth.json"), []byte("crashed"), 0o600))
 	l, err := runlock.Acquire(context.Background(), f.plan.RunBase, time.Second)
 	require.NoError(t, err)
-	require.NoError(t, l.Write(runlock.State{Holders: []int{999999}, Hash: "stale"}))
+	require.NoError(t, l.Write(runlock.State{Holders: []int{deadPID(t)}, Hash: "stale"}))
 	require.NoError(t, l.Release())
 
 	_, out := run(t, f.plan)
 	require.Equal(t, "crashed", out, "refreshed token from the crashed run is kept")
+
+	_, err = os.Stat(f.plan.RunBase)
+	require.True(t, os.IsNotExist(err), "overlay removed after recovery")
+	_, err = os.Stat(f.plan.RunBase + ".state.json")
+	require.True(t, os.IsNotExist(err), "state removed after recovery")
 }
 
 func TestSignalResult(t *testing.T) {
@@ -170,4 +194,52 @@ func TestRecoverHelper(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, "orphan", f.vaultAuth(t))
+	_, err = os.Stat(f.plan.RunBase)
+	require.True(t, os.IsNotExist(err), "overlay removed")
+}
+
+func TestIgnoredSignalStaysIgnored(t *testing.T) {
+	signal.Ignore(syscall.SIGHUP)
+	t.Cleanup(func() { signal.Reset(syscall.SIGHUP) })
+
+	f := newFixture(t, `kill -HUP $$; echo survived; exit 3`)
+	res, out := run(t, f.plan)
+	require.Equal(t, 3, res.Code)
+	require.Nil(t, res.Signal)
+	require.Contains(t, out, "survived")
+}
+
+func TestReraiseReturnsForQuit(t *testing.T) {
+	start := time.Now()
+	Reraise(syscall.SIGQUIT)
+	Reraise(syscall.SIGPIPE)
+	elapsed := time.Since(start)
+	require.Less(t, elapsed, 50*time.Millisecond, "both Reraise calls completed quickly")
+}
+
+func TestMissingNestedAuthDirDoesNotFail(t *testing.T) {
+	f := newFixture(t, `true`)
+	f.plan.Adapter.Dir.AuthFiles = []string{"auth.json", "nested/dir/token.json"}
+	res, err := Run(context.Background(), f.plan)
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Code)
+}
+
+func TestPromoteFailureIsAWarning(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores permissions")
+	}
+	f := newFixture(t, `printf new > "$FAKE_DIR/auth.json"; printf x > "$FAKE_DIR/newfile"`)
+	require.NoError(t, os.Chmod(f.global, 0o500))
+	t.Cleanup(func() { os.Chmod(f.global, 0o700) })
+
+	var stderr bytes.Buffer
+	f.plan.Stderr = &stderr
+	res, err := Run(context.Background(), f.plan)
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Code)
+	require.Equal(t, "new", f.vaultAuth(t))
+	_, err = os.Stat(f.plan.RunBase)
+	require.True(t, os.IsNotExist(err), "overlay removed despite promote failure")
+	require.Contains(t, stderr.String(), "could not share new non-auth files")
 }

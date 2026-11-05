@@ -78,7 +78,7 @@ func Run(ctx context.Context, p Plan) (Result, error) {
 // join registers this process as a holder, materializing the overlay if it
 // is the first one (recovering a crashed overlay first).
 func (p *Plan) join(ctx context.Context) error {
-	l, err := runlock.Acquire(ctx, p.RunBase, p.LockTimeout)
+	l, err := runlock.Acquire(context.WithoutCancel(ctx), p.RunBase, p.LockTimeout)
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func (p *Plan) join(ctx context.Context) error {
 	}
 	st.Prune()
 	if len(st.Holders) == 0 {
-		if _, err := recoverStale(p.RunBase, p.Global, p.Adapter, p.Ref, p.Vault, st.Hash); err != nil {
+		if _, err := recoverStale(p.RunBase, p.Global, p.Adapter, p.Ref, p.Vault, st.Hash, p.Stderr); err != nil {
 			return err
 		}
 		env, err := p.Vault.Load(p.Ref, p.Decrypter)
@@ -108,7 +108,7 @@ func (p *Plan) join(ctx context.Context) error {
 
 // leave seals final changes and removes the overlay if no holder remains.
 func (p *Plan) leave(ctx context.Context) error {
-	l, err := runlock.Acquire(ctx, p.RunBase, p.LockTimeout)
+	l, err := runlock.Acquire(context.WithoutCancel(ctx), p.RunBase, p.LockTimeout)
 	if err != nil {
 		return err
 	}
@@ -124,7 +124,7 @@ func (p *Plan) leave(ctx context.Context) error {
 	st.Prune()
 	if len(st.Holders) == 0 {
 		if err := overlay.Promote(p.RunBase, p.Global, p.Adapter.Dir.AuthFiles); err != nil {
-			return err
+			fmt.Fprintf(p.Stderr, "whoas: warning: could not share new non-auth files: %v\n", err)
 		}
 		if err := overlay.Remove(p.RunBase); err != nil {
 			return err
@@ -152,7 +152,7 @@ func sealIfChanged(dir string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, pr
 }
 
 // recoverStale seals and removes an overlay left by crashed holders.
-func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, hash string) (bool, error) {
+func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, hash string, warn io.Writer) (bool, error) {
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -160,7 +160,7 @@ func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Va
 		return false, err
 	}
 	if err := overlay.Promote(dir, global, a.Dir.AuthFiles); err != nil {
-		return false, err
+		fmt.Fprintf(warn, "whoas: warning: could not share new non-auth files: %v\n", err)
 	}
 	return true, overlay.Remove(dir)
 }
@@ -181,7 +181,7 @@ func Recover(ctx context.Context, base, global string, a *adapter.Adapter, r ref
 	if len(st.Holders) > 0 {
 		return false, nil
 	}
-	found, err := recoverStale(base, global, a, r, v, st.Hash)
+	found, err := recoverStale(base, global, a, r, v, st.Hash, os.Stderr)
 	if err != nil {
 		return found, err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,12 +20,14 @@ import (
 func (p *Plan) watch(ctx context.Context) (func(), error) {
 	w, err := fsnotify.NewWatcher()
 	if err != nil {
-		return nil, err
+		fmt.Fprintf(p.Stderr, "whoas: warning: seal-on-write disabled: %v\n", err)
+		return func() {}, nil
 	}
 	for _, d := range p.watchDirs() {
 		if err := w.Add(d); err != nil {
 			w.Close()
-			return nil, err
+			fmt.Fprintf(p.Stderr, "whoas: warning: seal-on-write disabled: %v\n", fmt.Errorf("watch %s: %w", d, err))
+			return func() {}, nil
 		}
 	}
 	var (
@@ -32,7 +35,7 @@ func (p *Plan) watch(ctx context.Context) (func(), error) {
 		timer *time.Timer
 	)
 	seal := func() {
-		l, err := runlock.Acquire(ctx, p.RunBase, p.LockTimeout)
+		l, err := runlock.Acquire(context.WithoutCancel(ctx), p.RunBase, p.LockTimeout)
 		if err != nil {
 			fmt.Fprintln(p.Stderr, "whoas: seal skipped:", err)
 			return
@@ -94,11 +97,16 @@ func (p *Plan) watch(ctx context.Context) (func(), error) {
 // watchDirs are the overlay root, every ancestor of an auth path, and every
 // existing directory inside directory-type auth paths.
 func (p *Plan) watchDirs() []string {
-	set := map[string]bool{p.RunBase: true}
+	set := map[string]bool{}
+	if info, err := os.Stat(p.RunBase); err == nil && info.IsDir() {
+		set[p.RunBase] = true
+	}
 	for _, a := range p.Adapter.Dir.AuthFiles {
 		full := filepath.Join(p.RunBase, filepath.FromSlash(a))
 		for d := filepath.Dir(full); strings.HasPrefix(d, p.RunBase); d = filepath.Dir(d) {
-			set[d] = true
+			if info, err := os.Stat(d); err == nil && info.IsDir() {
+				set[d] = true
+			}
 		}
 		_ = filepath.WalkDir(full, func(path string, d fs.DirEntry, err error) error {
 			if err == nil && d.IsDir() {
