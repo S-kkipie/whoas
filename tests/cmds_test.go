@@ -57,6 +57,28 @@ var customCmds = map[string]func(ts *testscript.TestScript, neg bool, args []str
 		ts.Check(err)
 		time.Sleep(d)
 	},
+	// wait-exists PATH [TIMEOUT] — poll every 20ms until PATH exists; fail
+	// after TIMEOUT (default 5s).
+	"wait-exists": func(ts *testscript.TestScript, neg bool, args []string) {
+		if neg || len(args) < 1 || len(args) > 2 {
+			ts.Fatalf("usage: wait-exists PATH [TIMEOUT]")
+		}
+		timeout := 5 * time.Second
+		if len(args) == 2 {
+			d, err := time.ParseDuration(args[1])
+			ts.Check(err)
+			timeout = d
+		}
+		path := ts.MkAbs(args[0])
+		for deadline := time.Now().Add(timeout); ; time.Sleep(20 * time.Millisecond) {
+			if _, err := os.Stat(path); err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				ts.Fatalf("%s did not appear within %s", args[0], timeout)
+			}
+		}
+	},
 	// sigterm-bg — send SIGTERM to every background command of the script.
 	"sigterm-bg": func(ts *testscript.TestScript, neg bool, args []string) {
 		if neg || len(args) != 0 {

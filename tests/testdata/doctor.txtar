@@ -22,7 +22,7 @@ stdout '^captures\s+removed 1 stale capture dir'
 
 # agent: start, unlock, use, lock
 exec whoas agent &ag&
-sleep 300ms
+wait-exists $WORK/run/agent.sock
 exec whoas unlock
 stdout '^unlocked \(env'
 exec whoas doctor
