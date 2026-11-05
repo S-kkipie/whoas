@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/S-kkipie/whoas/internal/overlay"
 	"github.com/S-kkipie/whoas/internal/ref"
 	"github.com/S-kkipie/whoas/internal/runlock"
 	"github.com/S-kkipie/whoas/internal/vault"
@@ -84,7 +85,8 @@ func newRmCmd() *cobra.Command {
 			if err := e.dirs.EnsureRuntime(); err != nil {
 				return err
 			}
-			l, err := runlock.Acquire(context.Background(), e.dirs.RunBase(r.Provider, r.Alias), 10*time.Second)
+			base := e.dirs.RunBase(r.Provider, r.Alias)
+			l, err := runlock.Acquire(context.Background(), base, 10*time.Second)
 			if err != nil {
 				return err
 			}
@@ -95,6 +97,14 @@ func newRmCmd() *cobra.Command {
 			}
 			if live := st.Live(); len(live) > 0 {
 				return fmt.Errorf("%s is in use by pid %v", r, live)
+			}
+			// Drop any overlay a crashed run left, so it can never be sealed
+			// back (resurrecting r) or over a new identity saved as r.
+			if err := overlay.Remove(base); err != nil {
+				return err
+			}
+			if err := l.Write(runlock.State{}); err != nil {
+				return err
 			}
 			if err := v.Remove(r); err != nil {
 				return err

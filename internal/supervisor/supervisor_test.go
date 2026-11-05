@@ -231,6 +231,27 @@ func TestRecoverDoesNotSealIncompleteOverlay(t *testing.T) {
 	}
 }
 
+// A crashed overlay of an identity that was removed from the vault must not
+// resurrect it.
+func TestRecoverDoesNotResurrectRemovedIdentity(t *testing.T) {
+	f := newFixture(t, `true`)
+	require.NoError(t, os.MkdirAll(f.plan.RunBase, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(f.plan.RunBase, "auth.json"), []byte("crashed"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(f.plan.RunBase, "new.txt"), []byte("shared"), 0o600))
+	f.writeState(t, runlock.State{Holders: []int{deadPID(t)}, Hash: "stale"})
+	require.NoError(t, f.plan.Vault.Remove(f.plan.Ref))
+
+	found, err := Recover(context.Background(), f.plan.RunBase, f.global, f.plan.Adapter, f.plan.Ref, f.plan.Vault)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.False(t, f.plan.Vault.Exists(f.plan.Ref), "removed identity stays removed")
+	_, err = os.Stat(f.plan.RunBase)
+	require.True(t, os.IsNotExist(err), "overlay removed")
+	got, err := os.ReadFile(filepath.Join(f.global, "new.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "shared", string(got), "non-auth entries still promoted")
+}
+
 func TestIgnoredSignalStaysIgnored(t *testing.T) {
 	signal.Ignore(syscall.SIGHUP)
 	t.Cleanup(func() { signal.Reset(syscall.SIGHUP) })

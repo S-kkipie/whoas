@@ -70,7 +70,7 @@ func newAddCmd() *cobra.Command {
 			if len(files) == 0 {
 				return fmt.Errorf("login produced none of %v; nothing saved", a.Dir.AuthFiles)
 			}
-			return save(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, whoami(a, bin, dir))
+			return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, whoami(a, bin, dir))
 		},
 	}
 }

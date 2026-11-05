@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +14,9 @@ import (
 
 	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/envelope"
+	"github.com/S-kkipie/whoas/internal/overlay"
 	"github.com/S-kkipie/whoas/internal/ref"
+	"github.com/S-kkipie/whoas/internal/runlock"
 	"github.com/S-kkipie/whoas/internal/vault"
 )
 
@@ -59,6 +62,32 @@ func accountSuffix(account string) string {
 		return ""
 	}
 	return " (" + account + ")"
+}
+
+// saveLocked saves r under its run lock: it refuses while a process holds r,
+// and drops any overlay a crashed run left so that it can never be sealed
+// over (or run instead of) the new session. The lock is not held during login.
+func (e *env) saveLocked(w io.Writer, errw io.Writer, v *vault.Vault, r ref.Ref, files map[string]envelope.File, account string) error {
+	base := e.dirs.RunBase(r.Provider, r.Alias)
+	l, err := runlock.Acquire(context.Background(), base, 10*time.Second)
+	if err != nil {
+		return err
+	}
+	defer l.Release()
+	st, err := l.Read()
+	if err != nil {
+		return fmt.Errorf("check whether %s is in use: %w", r, err)
+	}
+	if live := st.Live(); len(live) > 0 {
+		return fmt.Errorf("%s is in use by pid %v", r, live)
+	}
+	if err := overlay.Remove(base); err != nil {
+		return err
+	}
+	if err := l.Write(runlock.State{}); err != nil {
+		return err
+	}
+	return save(w, errw, v, r, files, account)
 }
 
 // save seals files as r, records metadata and warns about duplicate accounts.

@@ -60,7 +60,7 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return save(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, account)
+			return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, account)
 		},
 	}
 }

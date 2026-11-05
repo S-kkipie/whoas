@@ -154,14 +154,15 @@ func sealIfChanged(dir string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, pr
 	return h, nil
 }
 
-// recoverStale seals and removes an overlay left by crashed holders. An
-// overlay with no recorded hash was never completed by join (a completed join
-// always records one), so it is removed without sealing.
+// recoverStale seals and removes an overlay left by crashed holders. It is
+// removed without sealing when no hash was recorded (join never completed; a
+// completed join always records one) or when r is no longer in the vault
+// (removed identities must not come back).
 func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Vault, hash string, warn io.Writer) (bool, error) {
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
-	if hash != "" {
+	if hash != "" && v.Exists(r) {
 		if _, err := sealIfChanged(dir, a, r, v, hash); err != nil {
 			return false, err
 		}
