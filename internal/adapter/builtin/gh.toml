@@ -1,0 +1,17 @@
+name = "gh"
+bin  = "gh"
+kind = "dir-overlay"
+
+[dir]
+global     = "{xdg_config}/gh"
+inject     = { env = { GH_CONFIG_DIR = "{dir}" } }
+auth_files = ["hosts.yml"]
+
+[login]
+# --insecure-storage keeps the token in hosts.yml, which whoas then seals.
+cmd  = ["gh", "auth", "login", "--insecure-storage"]
+hint = "If your browser is signed in to another GitHub account, switch accounts there first."
+
+[whoami]
+cmd  = ["gh", "api", "user"]
+json = "login"
