@@ -1,0 +1,65 @@
+# Profiles, default profile, trusted .whoas.yaml (AC-04) and precedence.
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work
+env FAKECLI_LOGIN_AS=personal
+exec whoas add fakecli personal
+
+exec whoas profile set work fakecli@work
+exec whoas profile set personal fakecli@personal
+! exec whoas profile set work fakecli@nobody
+stderr 'identity fakecli@nobody not found'
+exec whoas profile default personal
+exec whoas profile ls
+stdout '^\* personal$'
+stdout '^  work$'
+exec whoas profile show work
+stdout '^fakecli\s+work$'
+
+# the default profile applies when nothing else does
+exec whoas fakecli whoami
+stdout '^account=personal$'
+exec whoas which fakecli
+stdout '^fakecli@personal  via default profile \(profile personal\)$'
+
+# AC-04: an untrusted project file blocks explicit runs until trusted
+cd proj
+! exec whoas fakecli whoami
+stderr 'not trusted'
+exec whoas trust
+stdout 'trusted .*\.whoas\.yaml'
+exec whoas fakecli whoami
+stdout '^account=work$'
+exec whoas which fakecli
+stdout 'fakecli@work  via project .*\.whoas\.yaml \(profile work\)'
+
+# -p and WHOAS_PROFILE beat the project file
+exec whoas -p personal fakecli whoami
+stdout '^account=personal$'
+env WHOAS_PROFILE=personal
+exec whoas fakecli whoami
+stdout '^account=personal$'
+env WHOAS_PROFILE=typo
+! exec whoas fakecli whoami
+stderr 'unknown profile "typo"'
+env WHOAS_PROFILE=
+
+# editing the file revokes trust
+cp other.yaml .whoas.yaml
+! exec whoas fakecli whoami
+stderr 'not trusted'
+exec whoas untrust
+stdout '^untrusted '
+exec whoas untrust
+stdout '^not trusted: '
+
+# schema whitelist is enforced at trust time
+cp bad.yaml .whoas.yaml
+! exec whoas trust
+stderr 'must be a string'
+
+-- proj/.whoas.yaml --
+profile: work
+-- proj/other.yaml --
+profile: personal
+-- proj/bad.yaml --
+profile: [work]
