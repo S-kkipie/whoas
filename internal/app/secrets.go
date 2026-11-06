@@ -55,11 +55,11 @@ func readSecrets(a *adapter.Adapter, fromStdin bool, in io.Reader, ask askFunc) 
 // obtainSecrets runs a's login.cmd (bin is its resolved binary) unless the
 // secrets come from stdin, then collects the secrets. The command gets the
 // caller's stdio and an environment without the adapter's secret and
-// unset_env vars; if it fails, nothing is asked.
+// unset_env vars (plus WHOAS_CONTEXT_DIR); if it fails, nothing is asked.
 func obtainSecrets(a *adapter.Adapter, bin string, fromStdin bool, in io.Reader, out, errw io.Writer, ask askFunc) (map[string]string, error) {
 	if len(a.Login.Cmd) > 0 && !fromStdin {
 		c := exec.Command(bin, a.Login.Cmd[1:]...)
-		c.Env = a.SecretEnv(os.Environ(), nil)
+		c.Env = withContext(a.SecretEnv(os.Environ(), nil))
 		c.Stdin, c.Stdout, c.Stderr = in, out, errw
 		if err := c.Run(); err != nil {
 			return nil, fmt.Errorf("%s failed: %w; nothing saved", strings.Join(a.Login.Cmd, " "), err)
@@ -114,7 +114,7 @@ func whoamiWithSecrets(a *adapter.Adapter, bin string, values map[string]string)
 	}
 	var out bytes.Buffer
 	c := exec.Command(bin, a.Whoami.Cmd[1:]...)
-	c.Env = a.SecretEnv(os.Environ(), values)
+	c.Env = withContext(a.SecretEnv(os.Environ(), values))
 	c.Stdout, c.Stderr = &out, io.Discard
 	if err := c.Run(); err != nil {
 		return ""

@@ -29,5 +29,5 @@ func shimMain(bin string, args []string) int {
 		fmt.Fprintln(os.Stderr, "whoas:", err)
 		return exitNotFound
 	}
-	return execReplace(real, append([]string{bin}, args...), os.Environ())
+	return execReplace(real, append([]string{bin}, args...), withContext(os.Environ()))
 }

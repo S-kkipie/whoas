@@ -38,7 +38,8 @@ type runRequest struct {
 	alias       string
 	profileFlag string
 	args        []string
-	explicit    bool // false when invoked through a shim
+	explicit    bool   // false when invoked through a shim
+	contextDir  string // where .whoas.yaml is looked up; "" = the working directory
 }
 
 // execMain handles `whoas [-p P] provider[@alias] args...`.
@@ -96,7 +97,7 @@ func runProvider(e *env, req runRequest) (int, error) {
 	}
 	meta, _ := v.ReadMeta(res.Ref)
 	banner(res.Ref, meta.Account, a.Experimental)
-	childEnv := append(os.Environ(), "WHOAS_DEPTH="+strconv.Itoa(depth+1))
+	childEnv := setEnv(os.Environ(), append(contextEnv(), "WHOAS_DEPTH="+strconv.Itoa(depth+1))...)
 	var result supervisor.Result
 	if a.Kind == adapter.KindEnvToken {
 		result, err = supervisor.RunEnv(context.Background(), supervisor.EnvPlan{
@@ -150,7 +151,7 @@ func (e *env) resolveIdentity(req runRequest) (resolve.Result, error) {
 		Config:      e.cfg,
 	}
 	if in.Alias == "" && in.ProfileFlag == "" && in.EnvProfile == "" {
-		pf, err := e.trustedProject(!req.explicit)
+		pf, err := e.trustedProject(req.contextDir, !req.explicit)
 		if err != nil {
 			return resolve.Result{}, err
 		}
@@ -163,11 +164,12 @@ func (e *env) resolveIdentity(req runRequest) (resolve.Result, error) {
 	return res, err
 }
 
-// trustedProject returns the nearest trusted .whoas.yaml. A file that cannot
-// be read, is untrusted or does not parse is an error, or a warning (and the
-// file is ignored) when warnOnly is set: a shim must never break on it.
-func (e *env) trustedProject(warnOnly bool) (*project.File, error) {
-	pf, err := e.findTrustedProject()
+// trustedProject returns the nearest trusted .whoas.yaml walking up from dir
+// ("" = the working directory). A file that cannot be read, is untrusted or
+// does not parse is an error, or a warning (and the file is ignored) when
+// warnOnly is set: a shim must never break on it.
+func (e *env) trustedProject(dir string, warnOnly bool) (*project.File, error) {
+	pf, err := e.findTrustedProject(dir)
 	if err != nil && warnOnly {
 		fmt.Fprintln(os.Stderr, "whoas: warning:", err)
 		return nil, nil
@@ -175,12 +177,15 @@ func (e *env) trustedProject(warnOnly bool) (*project.File, error) {
 	return pf, err
 }
 
-func (e *env) findTrustedProject() (*project.File, error) {
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, err
+func (e *env) findTrustedProject(dir string) (*project.File, error) {
+	if dir == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		dir = wd
 	}
-	path, err := project.Find(wd)
+	path, err := project.Find(dir)
 	if err != nil || path == "" {
 		return nil, err
 	}

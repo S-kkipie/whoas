@@ -16,6 +16,7 @@
 //	trap           wait for SIGTERM or SIGINT, print "trapped=TERM|INT", exit 42
 //	exit N         exit with code N
 //	envkey NAME    print "NAME=set" or "NAME=unset" (never the value)
+//	env NAME       print "NAME=<value>" (only for non-secret variables)
 //	tokwho         print "account=<part of $FAKETOK_KEY before '-'>"; exit 3 without it
 package main
 
@@ -173,6 +174,12 @@ func main() {
 				state = "set"
 			}
 			fmt.Printf("%s=%s\n", args[0], state)
+			args = args[1:]
+		case "env":
+			if len(args) < 1 {
+				fail("env needs NAME")
+			}
+			fmt.Printf("%s=%s\n", args[0], os.Getenv(args[0]))
 			args = args[1:]
 		case "tokwho":
 			key := os.Getenv("FAKETOK_KEY")

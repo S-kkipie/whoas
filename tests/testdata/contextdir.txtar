@@ -1,0 +1,34 @@
+# Every process whoas starts or execs gets WHOAS_CONTEXT_DIR, the directory
+# whoas resolved from, so MCP proxies an agent spawns resolve for its project.
+stdin key-work
+exec whoas add faketok work --stdin
+exec whoas profile set work faketok@work
+mkdir repo/sub
+cd repo/sub
+
+# explicit runs
+exec whoas faketok@work env WHOAS_CONTEXT_DIR
+stdout '^WHOAS_CONTEXT_DIR=/.*/repo/sub$'
+
+# a nested whoas overwrites its parent's context
+env WHOAS_CONTEXT_DIR=/elsewhere
+exec whoas faketok@work env WHOAS_CONTEXT_DIR
+stdout '^WHOAS_CONTEXT_DIR=/.*/repo/sub$'
+env WHOAS_CONTEXT_DIR=
+
+# shims, with an identity and passing through
+exec whoas shims install
+env PATH=$WORK/data/shims:$PATH
+exec fakecli env WHOAS_CONTEXT_DIR
+stdout '^WHOAS_CONTEXT_DIR=/.*/repo/sub$'
+env WHOAS_PROFILE=work
+exec faketok env WHOAS_CONTEXT_DIR
+stdout '^WHOAS_CONTEXT_DIR=/.*/repo/sub$'
+env WHOAS_PROFILE=
+
+# whoas run
+exec whoas run -- sh -c 'echo "ctx=$WHOAS_CONTEXT_DIR"'
+stdout '^ctx=/.*/repo/sub$'
+
+-- key-work --
+work-secret
