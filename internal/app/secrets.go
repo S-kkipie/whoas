@@ -52,6 +52,22 @@ func readSecrets(a *adapter.Adapter, fromStdin bool, in io.Reader, ask askFunc) 
 	return values, nil
 }
 
+// obtainSecrets runs a's login.cmd (bin is its resolved binary) unless the
+// secrets come from stdin, then collects the secrets. The command gets the
+// caller's stdio and an environment without the adapter's secret and
+// unset_env vars; if it fails, nothing is asked.
+func obtainSecrets(a *adapter.Adapter, bin string, fromStdin bool, in io.Reader, out, errw io.Writer, ask askFunc) (map[string]string, error) {
+	if len(a.Login.Cmd) > 0 && !fromStdin {
+		c := exec.Command(bin, a.Login.Cmd[1:]...)
+		c.Env = a.SecretEnv(os.Environ(), nil)
+		c.Stdin, c.Stdout, c.Stderr = in, out, errw
+		if err := c.Run(); err != nil {
+			return nil, fmt.Errorf("%s failed: %w; nothing saved", strings.Join(a.Login.Cmd, " "), err)
+		}
+	}
+	return readSecrets(a, fromStdin, in, ask)
+}
+
 // secretsFromEnv reads a's secrets from the environment (whoas import).
 func secretsFromEnv(a *adapter.Adapter, getenv func(string) string) (map[string]string, error) {
 	values := map[string]string{}

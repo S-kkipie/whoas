@@ -62,6 +62,9 @@ func runProvider(e *env, req runRequest) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if a.Kind == adapter.KindMCP {
+		return 0, fmt.Errorf("%s is an MCP server, not a CLI; agents start it with: whoas mcp proxy %s", a.Name, a.MCP.Server)
+	}
 	res, err := e.resolveIdentity(req)
 	if err != nil {
 		return 0, err

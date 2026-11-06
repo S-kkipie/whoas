@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	"github.com/tidwall/gjson"
 
 	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/agent"
@@ -62,6 +64,9 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Fprintln(tw, "agent\trunning (unlocked)")
 			}
 			fmt.Fprintf(tw, "shims\t%s (in PATH: %t)\n", e.dirs.ShimsDir(), inPath(e.dirs.ShimsDir()))
+			for _, p := range claudeKeyHelpers(e.dirs.Home, os.Getenv("CLAUDE_CONFIG_DIR")) {
+				fmt.Fprintf(tw, "claude\twarning: %s sets apiKeyHelper, which outranks the token of every claude identity and cannot be unset from the environment\n", p)
+			}
 			if n, err := sweepCaptures(filepath.Join(e.dirs.Runtime, "capture")); err != nil {
 				fmt.Fprintf(tw, "captures\terror: %v\n", err)
 			} else {
@@ -78,6 +83,33 @@ func newDoctorCmd() *cobra.Command {
 			return tw.Flush()
 		},
 	}
+}
+
+// claudeKeyHelpers returns the Claude Code settings files (in configDir, the
+// value of $CLAUDE_CONFIG_DIR, and in ~/.claude) that set apiKeyHelper. The
+// helper's command is never printed.
+func claudeKeyHelpers(home, configDir string) []string {
+	dirs := []string{filepath.Join(home, ".claude")}
+	if configDir != "" {
+		dirs = []string{configDir, dirs[0]}
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		p := filepath.Join(d, "settings.json")
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		data, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		if v := gjson.GetBytes(data, "apiKeyHelper"); v.Exists() && v.String() != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // recoverAll seals and removes overlays whose holders all died.

@@ -1,0 +1,36 @@
+# mcp adapters: keys are added like env-token secrets, never imported, and
+# listed without a binary.
+stdin key-acme
+exec whoas add mcp-posthog acme --stdin
+stdout 'saved mcp-posthog@acme$'
+stderr 'hint: Create one at https://app.posthog.com/settings/user-api-keys'
+! stdout 'phx-acme-secret'
+! stderr 'phx-acme-secret'
+grep 'age-encryption.org/v1' $WORK/data/vault/mcp-posthog/acme.age
+! grep 'phx-acme-secret' $WORK/data/vault/mcp-posthog/acme.age
+
+exec whoas ls mcp-posthog
+stdout 'mcp-posthog@acme\s+-\s+-'
+! stdout 'phx-acme-secret'
+
+# there is nothing to import: these keys never live in a CLI's config
+env POSTHOG_API_KEY=phx-env-secret
+! exec whoas import mcp-posthog other
+stderr 'nothing to import; use: whoas add mcp-posthog other'
+! stderr 'phx-env-secret'
+env POSTHOG_API_KEY=
+
+# always listed, with no binary
+exec whoas providers
+stdout '^mcp-linear\s+-\s+mcp\s+builtin\s+n/a$'
+stdout '^mcp-posthog\s+-\s+mcp\s+builtin\s+n/a$'
+
+# not a CLI
+expect-exit 125 whoas mcp-posthog@acme
+stderr 'mcp-posthog is an MCP server, not a CLI; agents start it with: whoas mcp proxy posthog'
+
+exec whoas rm mcp-posthog@acme
+stdout 'removed mcp-posthog@acme'
+
+-- key-acme --
+phx-acme-secret

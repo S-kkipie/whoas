@@ -46,22 +46,30 @@ func newAddCmd() *cobra.Command {
 			if v.Exists(r) {
 				return fmt.Errorf("%s already exists (whoas rm %s first)", r, r)
 			}
-			if a.Kind == adapter.KindEnvToken {
+			if a.Kind == adapter.KindEnvToken || a.Kind == adapter.KindMCP {
 				if a.Login.Hint != "" {
 					fmt.Fprintln(cmd.ErrOrStderr(), "hint:", a.Login.Hint)
 				}
-				values, err := readSecrets(a, fromStdin, cmd.InOrStdin(), ttyAsk)
+				loginBin := ""
+				if len(a.Login.Cmd) > 0 && !fromStdin {
+					if loginBin, err = e.realBin(a.Bin); err != nil {
+						return err
+					}
+				}
+				values, err := obtainSecrets(a, loginBin, fromStdin, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ttyAsk)
 				if err != nil {
 					return err
 				}
 				account := ""
-				if bin, err := e.realBin(a.Bin); err == nil {
-					account = whoamiWithSecrets(a, bin, values)
+				if a.Kind == adapter.KindEnvToken {
+					if bin, err := e.realBin(a.Bin); err == nil {
+						account = whoamiWithSecrets(a, bin, values)
+					}
 				}
 				return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, envelope.FromSecrets(r.Provider, values).Files, account)
 			}
 			if fromStdin {
-				return errors.New("--stdin is only for env-token adapters")
+				return errors.New("--stdin is only for env-token and mcp adapters")
 			}
 			bin, err := e.realBin(a.Bin)
 			if err != nil {
@@ -101,6 +109,6 @@ func newAddCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&fromStdin, "stdin", false, "env-token adapters: read one secret per line from stdin")
+	cmd.Flags().BoolVar(&fromStdin, "stdin", false, "env-token and mcp adapters: read one secret per line from stdin (skips login.cmd)")
 	return cmd
 }

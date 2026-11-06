@@ -18,6 +18,15 @@ exec whoas doctor
 stdout '^vault\s+initialized$'
 stdout '^recovered\s+0 stale overlay'
 
+# an apiKeyHelper in Claude Code's settings outranks claude identities
+! stdout 'apiKeyHelper'
+mkdir $HOME/.claude
+cp claude-settings.json $HOME/.claude/settings.json
+exec whoas doctor
+stdout '^claude\s+warning: \S+/home/.claude/settings.json sets apiKeyHelper'
+! stdout 'get-key'
+rm $HOME/.claude/settings.json
+
 # doctor sweeps capture dirs left by add/import runs that died
 mkdir run/capture/fakecli/ghost-2147483647
 exec sh -c 'echo {} > run/capture/fakecli/ghost-2147483647.mirror.json'
@@ -63,3 +72,6 @@ exec whoas which fakecli@work
 ! stdout 'tok-|AGE-SECRET-KEY'
 ! grep 'tok-' $WORK/data/vault/fakecli/work.age
 ! grep 'tok-' $WORK/data/vault/fakecli/work.meta.json
+
+-- claude-settings.json --
+{"apiKeyHelper": "~/bin/get-key.sh"}

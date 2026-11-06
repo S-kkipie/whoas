@@ -62,3 +62,22 @@ env = "TOK_KEY"
 	require.NoFileExists(t, filepath.Join(cwd, "leftover.txt"), "nothing promoted into the working directory")
 	require.FileExists(t, filepath.Join(base, "leftover.txt"))
 }
+
+func TestClaudeKeyHelpers(t *testing.T) {
+	home := t.TempDir()
+	require.Empty(t, claudeKeyHelpers(home, ""), "no settings file")
+
+	settings := filepath.Join(home, ".claude", "settings.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(settings), 0o700))
+	require.NoError(t, os.WriteFile(settings, []byte(`{"model":"opus"}`), 0o600))
+	require.Empty(t, claudeKeyHelpers(home, ""))
+
+	require.NoError(t, os.WriteFile(settings, []byte(`{"apiKeyHelper":"~/bin/get-key.sh"}`), 0o600))
+	require.Equal(t, []string{settings}, claudeKeyHelpers(home, ""))
+
+	cfg := t.TempDir()
+	other := filepath.Join(cfg, "settings.json")
+	require.NoError(t, os.WriteFile(other, []byte(`{"apiKeyHelper":"vault read key"}`), 0o600))
+	require.Equal(t, []string{other, settings}, claudeKeyHelpers(home, cfg), "$CLAUDE_CONFIG_DIR and ~/.claude are both checked")
+	require.Equal(t, []string{settings}, claudeKeyHelpers(home, filepath.Join(home, ".claude")), "each file once")
+}

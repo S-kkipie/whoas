@@ -32,6 +32,9 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.Kind == adapter.KindMCP {
+				return fmt.Errorf("%s keys never live in a CLI's config, so there is nothing to import; use: whoas add %s %s", a.Name, a.Name, r.Alias)
+			}
 			if err := a.CheckConflicts(e.vars()); err != nil {
 				return err
 			}
