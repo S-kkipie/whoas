@@ -1,0 +1,12 @@
+# Adapters with helper_keys warn about credentials kept by external helpers.
+exec whoas import fakedock main
+stdout 'saved fakedock@main \(account=dock\)'
+stderr 'warning: fakedock@main: auth.json delegates credentials to helpers \(credHelpers: registry.example.com\)'
+
+# without helper entries there is no warning
+env FAKECLI_LOGIN_AS=plain
+exec whoas add fakedock plain
+! stderr 'warning'
+
+-- home/.fakedock/auth.json --
+{"account":"dock","gen":0,"token":"tok-dock-0","credHelpers":{"registry.example.com":"gcloud"}}

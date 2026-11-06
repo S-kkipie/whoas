@@ -1,0 +1,41 @@
+# Root overlays: an adapter whose overlay is all of $HOME (railway-style).
+env FAKECLI_LOGIN_AS=global
+exec fakehome login
+snapshot $HOME/.fakecli/auth.json g
+
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakehome work
+stdout 'saved fakehome@work \(account=work\)'
+unchanged $HOME/.fakecli/auth.json g
+
+exec whoas import fakehome main
+stdout 'saved fakehome@main \(account=global\)'
+
+# the CLI sees the identity through the overlay HOME; refreshes are sealed
+exec whoas fakehome@work whoami
+stdout '^account=work$'
+exec whoas fakehome@work refresh token
+stdout '^token=tok-work-1$'
+exec whoas fakehome@work token
+stdout '^token=tok-work-1$'
+
+# new non-auth files the CLI creates under ~ are promoted to the real home
+exec whoas fakehome@work setting theme dark
+exists $HOME/.fakecli/settings/theme.txt
+
+# experimental adapters are marked in the banner
+env WHOAS_BANNER=always
+exec whoas fakehome@work whoami
+stderr '^whoas: fakehome@work \(account=work\) \[experimental\]$'
+env WHOAS_BANNER=
+
+# concurrent runs of the same identity share one overlay, removed afterwards
+exec whoas fakehome@work sleep 300 whoami &a&
+exec whoas fakehome@work sleep 300 whoami &b&
+wait
+! exists $WORK/run/id/fakehome/work
+
+# the real home session was never touched
+unchanged $HOME/.fakecli/auth.json g
+exec fakehome whoami
+stdout '^account=global$'

@@ -35,6 +35,65 @@ hint = "fake hint"
 cmd = ["fakecli", "whoami"]
 `
 
+// fakeAdapters are installed as user adapters in every script: the plain
+// fake CLI, a root overlay of $HOME, an env-token CLI and one with helper keys.
+var fakeAdapters = map[string]string{
+	"fakecli.toml": fakeAdapter,
+	"fakehome.toml": `name = "fakehome"
+bin  = "fakehome"
+kind = "dir-overlay"
+experimental = true
+
+[dir]
+global     = "{home}"
+inject     = { env = { HOME = "{dir}" } }
+auth_files = [".fakecli/auth.json"]
+
+[login]
+cmd = ["fakehome", "login"]
+
+[whoami]
+cmd = ["fakehome", "whoami"]
+`,
+	"faketok.toml": `name = "faketok"
+bin  = "faketok"
+kind = "env-token"
+unset_env = ["FAKETOK_LEGACY"]
+
+[[secret]]
+env   = "FAKETOK_KEY"
+label = "Fake Token"
+
+[[secret]]
+env      = "FAKETOK_HOST"
+label    = "Fake Host"
+plain    = true
+optional = true
+
+[login]
+hint = "fake token hint"
+
+[whoami]
+cmd = ["faketok", "tokwho"]
+`,
+	"fakedock.toml": `name = "fakedock"
+bin  = "fakedock"
+kind = "dir-overlay"
+
+[dir]
+global      = "{home}/.fakedock"
+inject      = { env = { FAKECLI_CONFIG_DIR = "{dir}" } }
+auth_files  = ["auth.json"]
+helper_keys = ["credHelpers"]
+
+[login]
+cmd = ["fakedock", "login"]
+
+[whoami]
+cmd = ["fakedock", "whoami"]
+`,
+}
+
 var (
 	snapMu    sync.Mutex
 	snapshots = map[string]string{}
