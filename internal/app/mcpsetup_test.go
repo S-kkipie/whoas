@@ -143,3 +143,63 @@ func TestMCPSetupRejects(t *testing.T) {
 		require.ErrorContains(t, err, c.err, c.args)
 	}
 }
+
+// fakeAgentsWithAddFailure puts shell-script claude and codex on PATH that can
+// fail on add if FAIL_ADD env var is set.
+func fakeAgentsWithAddFailure(t *testing.T) string {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "argv.log")
+	script := `#!/bin/sh
+name=$(basename "$0")
+echo "$name $*" >> '` + log + `'
+reg='` + dir + `'/"$name"-
+case "$2" in
+get) test -e "$reg$3" ;;
+remove) rm "$reg$3" ;;
+add-json)
+	if [ -n "$FAIL_ADD" ]; then exit 1; fi
+	echo "$6" > "$reg$5" ;;
+add)
+	if [ -n "$FAIL_ADD" ]; then exit 1; fi
+	echo "$*" > "$reg$3" ;;
+esac
+`
+	for _, name := range []string{"claude", "codex"} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(script), 0o755))
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+func TestMCPSetupAddFailureWithReplace(t *testing.T) {
+	proxyEnv(t)
+	fakeAgentsWithAddFailure(t)
+
+	// First, set up a server
+	out, err := setup("posthog", "--agent", "claude")
+	require.NoError(t, err)
+	require.Contains(t, out, "claude mcp add-json")
+
+	// Now try to replace it with add failing
+	t.Setenv("FAIL_ADD", "1")
+	_, err = setup("mcp-posthog", "--agent", "claude", "--scope", "project", "--replace")
+	require.Error(t, err)
+	// When add fails after remove succeeds, error should mention the removed entry
+	require.ErrorContains(t, err, "the previous posthog entry was already removed")
+	require.ErrorContains(t, err, "whoas mcp setup posthog --agent claude")
+}
+
+func TestMCPSetupAddFailureWithoutReplace(t *testing.T) {
+	proxyEnv(t)
+	fakeAgentsWithAddFailure(t)
+
+	// Try to add posthog (doesn't exist yet) with add failing, without replace
+	t.Setenv("FAIL_ADD", "1")
+	_, err := setup("posthog", "--agent", "claude")
+	require.Error(t, err)
+	errStr := err.Error()
+	// When add fails without prior remove, should have plain error (no mention of removed entry)
+	require.Contains(t, errStr, "claude mcp add-json failed")
+	require.NotContains(t, errStr, "the previous")
+	require.NotContains(t, errStr, "already removed")
+}

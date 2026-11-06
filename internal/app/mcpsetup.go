@@ -166,12 +166,20 @@ func newMCPSetupCmd() *cobra.Command {
 			if exists && !replace {
 				return fmt.Errorf("%s already has an MCP server named %q (see: %s); use --replace to replace it", agentName, s.server, shellQuote(get))
 			}
+			removed := false
 			if exists {
 				if err := run(s.removeCmd()); err != nil {
 					return err
 				}
+				removed = true
 			}
-			return run(s.addCmd())
+			if err := run(s.addCmd()); err != nil {
+				if removed {
+					return fmt.Errorf("%w; the previous %s entry was already removed — fix the error above and re-run whoas mcp setup %s --agent %s", err, s.server, s.server, agentName)
+				}
+				return err
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&agentName, "agent", "", "agent to register the server in: claude or codex")
