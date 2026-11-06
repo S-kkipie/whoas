@@ -463,6 +463,7 @@ func TestMCPRejects(t *testing.T) {
 		"auth oauth":       {replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\nauth    = \"oauth\""), `"oauth" is not supported yet`},
 		"auth other":       {replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\nauth    = \"basic\""), `mcp.auth "basic" not supported`},
 		"unknown mcp key":  {replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\ntransport = \"sse\""), "unknown keys"},
+		"duplicate header": {replace(mcpAcme, `X-Acme-Org = "{ACME_ORG}"`, `X-Acme-Org = "{ACME_ORG}", x-acme-org = "{ACME_ORG}"`), `mcp.headers "X-Acme-Org" and "x-acme-org" are the same header`},
 	}
 	for name, c := range cases {
 		_, err := Parse([]byte(c.body), name)
@@ -502,6 +503,28 @@ func TestMCPRegistry(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "c.toml"), []byte(mcpAdapter("mcp-c", "alpha")), 0o600))
 	_, err = LoadRegistry(dir)
 	require.ErrorContains(t, err, `adapters "mcp-a" and "mcp-c" both use mcp.server "alpha"`)
+}
+
+// `whoas mcp proxy <word>` tries mcp adapter names before servers, so a
+// server named like another mcp adapter would be registered by setup for one
+// adapter and served by the proxy with the other.
+func TestMCPServerNamedLikeAnotherAdapter(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.toml"), []byte(mcpAdapter("mcp-a", "mcp-b")), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.toml"), []byte(mcpAdapter("mcp-b", "beta")), 0o600))
+	_, err := LoadRegistry(dir)
+	require.EqualError(t, err, `adapter "mcp-a" uses mcp.server "mcp-b", which is the name of adapter "mcp-b"`)
+
+	dir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.toml"), []byte(mcpAdapter("mcp-a", "mcp-linear")), 0o600))
+	_, err = LoadRegistry(dir)
+	require.EqualError(t, err, `adapter "mcp-a" uses mcp.server "mcp-linear", which is the name of adapter "mcp-linear"`, "built-ins count")
+
+	dir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.toml"), []byte(mcpAdapter("acme", "acme")), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.toml"), []byte(mcpAdapter("mcp-b", "gh")), 0o600))
+	_, err = LoadRegistry(dir)
+	require.NoError(t, err, "its own name, or the name of an adapter of another kind, is fine")
 }
 
 func TestClaudeBuiltin(t *testing.T) {

@@ -22,10 +22,11 @@ import (
 	"github.com/S-kkipie/whoas/internal/vault"
 )
 
-// Exit codes of `whoas mcp proxy` (agents log its stderr).
+// Exit codes of `whoas mcp proxy` (agents log its stderr). A wrong number of
+// arguments is a cobra usage error and exits 1, as for every command.
 const (
 	exitProxyRemote     = 1 // the remote failed before or during the session
-	exitProxyNoIdentity = 2 // no identity resolves (or a usage error)
+	exitProxyNoIdentity = 2 // no identity resolves, or the argument names no mcp adapter
 	exitProxyLocked     = 3 // the vault cannot be read without a terminal
 )
 

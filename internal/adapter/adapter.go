@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -351,6 +353,16 @@ func (a *Adapter) validateMCP() error {
 			used[p[1]] = true
 		}
 	}
+	// TOML keys are case-sensitive, HTTP header names are not: two entries
+	// for one header would race to set it.
+	canonical := map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(m.Headers)) {
+		c := http.CanonicalHeaderKey(name)
+		if prev, ok := canonical[c]; ok {
+			return fmt.Errorf("mcp.headers %q and %q are the same header", prev, name)
+		}
+		canonical[c] = name
+	}
 	for _, s := range a.Secrets {
 		if !used[s.Env] {
 			return fmt.Errorf("secret %s is not used by any mcp.headers value", s.Env)
@@ -603,6 +615,17 @@ func LoadRegistry(userDir string) (*Registry, error) {
 		if len(names) > 1 {
 			sort.Strings(names)
 			return nil, fmt.Errorf("adapters %q and %q both use mcp.server %q", names[0], names[1], server)
+		}
+	}
+	// `whoas mcp proxy <word>` matches mcp adapter names before servers, so
+	// a server named like another mcp adapter would reach that adapter.
+	for _, name := range r.Names() {
+		a := r.byName[name]
+		if a.Kind != KindMCP || a.MCP.Server == name {
+			continue
+		}
+		if o, ok := r.byName[a.MCP.Server]; ok && o.Kind == KindMCP {
+			return nil, fmt.Errorf("adapter %q uses mcp.server %q, which is the name of adapter %q", name, a.MCP.Server, o.Name)
 		}
 	}
 	return r, nil
