@@ -8,6 +8,8 @@
 
 <p align="center">
   <a href="https://github.com/S-kkipie/whoas/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/S-kkipie/whoas/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/S-kkipie/whoas/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/S-kkipie/whoas"></a>
+  <a href="https://pkg.go.dev/github.com/S-kkipie/whoas"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/S-kkipie/whoas.svg"></a>
   <img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/S-kkipie/whoas">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20WSL%20%7C%20macOS-informational">
@@ -129,24 +131,47 @@ You can [add your own](#adding-a-cli) adapter for any CLI or MCP server.
 
 ## Install
 
-Requires Go ≥ 1.25.
+**Linux, macOS and WSL** — the install script downloads the latest
+[release](https://github.com/S-kkipie/whoas/releases), checks it against the
+release's `checksums.txt` and puts `whoas` in `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/S-kkipie/whoas/main/install.sh | sh
+```
+
+`WHOAS_VERSION=v0.3.0` pins a release and `WHOAS_INSTALL_DIR=/somewhere/bin`
+changes the target (pass them to `sh`: `… | WHOAS_VERSION=v0.3.0 sh`). Prefer to
+do it by hand? Every release has `whoas_<version>_<os>_<arch>.tar.gz` archives
+(`.zip` for Windows) and a `checksums.txt` on the
+[Releases](https://github.com/S-kkipie/whoas/releases) page.
+
+<details>
+<summary><b>With Go</b> (≥ 1.25)</summary>
 
 ```sh
 go install github.com/S-kkipie/whoas/cmd/whoas@latest
 ```
 
-Make sure `$(go env GOPATH)/bin` is on your `PATH`, then check your setup:
+Make sure `$(go env GOPATH)/bin` is on your `PATH`.
+</details>
+
+<details>
+<summary><b>From source</b></summary>
 
 ```sh
-whoas doctor
-whoas providers     # which supported CLIs are installed
+git clone https://github.com/S-kkipie/whoas && cd whoas
+go build -o ~/.local/bin/whoas ./cmd/whoas
 ```
+</details>
 
 <details>
 <summary><b>WSL: keep the master key in Windows Credential Manager</b></summary>
 
-Build the Windows helper next to the Linux binary **before your first
-`whoas add`**:
+On WSL whoas keeps its master key in Windows Credential Manager through the
+Windows build, `whoas.exe`, which must sit next to the Linux binary **before your
+first `whoas add`**. The install script already puts it there. With any other
+method, unzip `whoas.exe` from the release's `whoas_<version>_windows_amd64.zip`
+next to `whoas`, or build it:
 
 ```sh
 git clone https://github.com/S-kkipie/whoas && cd whoas
@@ -158,14 +183,12 @@ whoas remembers the keystore it picks the first time (in
 for a single run.
 </details>
 
-<details>
-<summary><b>From source</b></summary>
+Then check your setup:
 
 ```sh
-git clone https://github.com/S-kkipie/whoas && cd whoas
-go build -o ~/.local/bin/whoas ./cmd/whoas
+whoas doctor
+whoas providers     # which supported CLIs are installed
 ```
-</details>
 
 ## Quick start
 
