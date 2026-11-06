@@ -45,14 +45,15 @@ exec fakehome whoami
 stdout '^account=global$'
 
 # a conflicting legacy dir (wrangler's ~/.wrangler) blocks add, import and
-# every run before anything is touched; whoas exits 125
+# every run before anything is touched; runs exit 125, add/import exit 1 like
+# their other errors
 mkdir $HOME/.legacy
 expect-exit 125 whoas fakehome@work whoami
 stderr '^whoas: fakehome: .*home/\.legacy exists and fakehome uses it instead of the isolated directory; move it \(see the adapter''s hint\) to use identities$'
 ! stdout 'account='
-expect-exit 125 whoas add fakehome blocked
+expect-exit 1 whoas add fakehome blocked
 stderr 'home/\.legacy exists'
-expect-exit 125 whoas import fakehome blocked
+expect-exit 1 whoas import fakehome blocked
 stderr 'home/\.legacy exists'
 ! exists $WORK/data/vault/fakehome/blocked.age
 exec whoas profile set legacy fakehome@work

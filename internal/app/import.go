@@ -33,7 +33,7 @@ func newImportCmd() *cobra.Command {
 				return err
 			}
 			if err := a.CheckConflicts(e.vars()); err != nil {
-				return &exitError{code: exitWhoasError, err: err}
+				return err
 			}
 			v, err := e.initVault()
 			if err != nil {

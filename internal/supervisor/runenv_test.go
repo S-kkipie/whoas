@@ -97,7 +97,7 @@ func TestRunEnvMissingRequiredSecret(t *testing.T) {
 		Env:    append(os.Environ(), "TOK_KEY=ambient"),
 		Stdout: &out,
 	})
-	require.EqualError(t, err, "tok@work: identity has no TOK_KEY; re-add it with whoas add tok work")
+	require.EqualError(t, err, "tok@work: identity has no TOK_KEY; remove and re-add it: whoas rm tok@work && whoas add tok work")
 	require.Empty(t, out.String())
 	require.NoFileExists(t, marker, "the CLI must not be spawned")
 

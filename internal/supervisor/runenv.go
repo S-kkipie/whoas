@@ -39,7 +39,7 @@ func RunEnv(ctx context.Context, p EnvPlan) (Result, error) {
 	secrets := env.Secrets()
 	for _, s := range p.Adapter.Secrets {
 		if !s.Optional && secrets[s.Env] == "" {
-			return Result{}, fmt.Errorf("%s: identity has no %s; re-add it with whoas add %s %s", p.Ref, s.Env, p.Ref.Provider, p.Ref.Alias)
+			return Result{}, fmt.Errorf("%s: identity has no %s; remove and re-add it: whoas rm %s && whoas add %s %s", p.Ref, s.Env, p.Ref, p.Ref.Provider, p.Ref.Alias)
 		}
 	}
 	return spawnCmd(p.Bin, p.Args, p.Adapter.SecretEnv(p.Env, secrets), p.Stdin, p.Stdout, p.Stderr)

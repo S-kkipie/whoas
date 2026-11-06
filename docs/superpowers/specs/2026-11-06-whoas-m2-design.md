@@ -49,7 +49,7 @@ Copying such changes back is a follow-up.
 Optional `dir.helper_keys = ["credsStore", "credHelpers"]`: top-level JSON keys of an auth file that delegate credentials to stores outside whoas. Each key must be a plain top-level key name. They are used for the warning described under Docker.
 
 ### `conflicts`
-Optional `dir.conflicts = ["{home}/.wrangler"]`: paths, with the same placeholders as `global` (each must start with `{home}/`, `{xdg_config}/` or `{xdg_data}/`), that make the CLI ignore the injected dir. If any expanded path exists, `add`, `import` and every run (explicit, shim, `whoas run`) of that adapter fail before touching anything, exit 125:
+Optional `dir.conflicts = ["{home}/.wrangler"]`: paths, with the same placeholders as `global` (each must start with `{home}/`, `{xdg_config}/` or `{xdg_data}/`), that make the CLI ignore the injected dir. If any expanded path exists, `add`, `import` and every run (explicit, shim, `whoas run`) of that adapter fail before touching anything (runs exit 125; `add`/`import` exit 1, like their other errors):
 
 ```
 whoas: <provider>: <path> exists and <bin> uses it instead of the isolated directory; move it (see the adapter's hint) to use identities
@@ -102,7 +102,7 @@ Validation:
 - **Run** (explicit, shim, `run`):
   - Same resolution, trust, depth and exit codes as M1.
   - Decrypt (agent first) → child env = `base − unset_env − secret envs + ENV=value…` → spawn.
-  - A required secret missing from the identity (e.g. sealed by an older dir-overlay adapter of the same name) fails before spawning, exit 125: `whoas: <ref>: identity has no <ENV>; re-add it with whoas add <provider> <alias>`.
+  - A required secret missing from the identity (e.g. sealed by an older dir-overlay adapter of the same name) fails before spawning, exit 125: `whoas: <ref>: identity has no <ENV>; remove and re-add it: whoas rm <ref> && whoas add <provider> <alias>`.
   - **No overlay, lock or seal-on-write** (tokens are static).
   - Signals and exit status go through the same supervisor helper.
 - **`whoas ls`**: ACTIVE shows `-` (no holders). **`rm`**: no lock needed. **`doctor`** skips env-token adapters when recovering overlays.
