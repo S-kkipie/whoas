@@ -344,7 +344,9 @@ type Registry struct {
 	source map[string]string // name -> "builtin" | "user"
 }
 
-// LoadRegistry loads built-in adapters, then userDir/*.toml (user wins on name clash).
+// LoadRegistry loads built-in adapters, then userDir/*.toml. A user adapter
+// replaces every built-in with the same name or the same bin; two user
+// adapters (or two built-ins) sharing a bin are an error.
 func LoadRegistry(userDir string) (*Registry, error) {
 	r := &Registry{byName: map[string]*Adapter{}, source: map[string]string{}}
 	builtins, err := fs.Glob(builtinFS, "builtin/*.toml")
@@ -367,6 +369,7 @@ func LoadRegistry(userDir string) (*Registry, error) {
 	if err != nil {
 		return nil, err
 	}
+	users := make([]*Adapter, 0, len(user))
 	for _, p := range user {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -376,8 +379,19 @@ func LoadRegistry(userDir string) (*Registry, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.byName[a.Name] = a
-		r.source[a.Name] = "user"
+		users = append(users, a)
+	}
+	for _, u := range users {
+		for name, b := range r.byName {
+			if r.source[name] == "builtin" && (name == u.Name || b.Bin == u.Bin) {
+				delete(r.byName, name)
+				delete(r.source, name)
+			}
+		}
+	}
+	for _, u := range users {
+		r.byName[u.Name] = u
+		r.source[u.Name] = "user"
 	}
 	// Check for duplicate bins
 	binToName := make(map[string][]string)

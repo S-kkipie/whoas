@@ -400,7 +400,7 @@ every `inject.env` value contains `{dir}`; `global` starts with `{home}/`,
 `{xdg_config}/` or `{xdg_data}/` (or is exactly one of those roots, with its
 variable injected); `auth_files` are clean relative paths; an `env-token` adapter
 has at least one `[[secret]]` and no `[dir]` or `login.cmd`; no two adapters share
-a `bin`. A user adapter with the same `name` replaces a built-in.
+a `bin`. A user adapter with the same `name` or `bin` replaces that built-in.
 
 > Adapters are data, not scripts — but an adapter decides which binary runs, so
 > only install adapters you trust. Project files can never declare one.

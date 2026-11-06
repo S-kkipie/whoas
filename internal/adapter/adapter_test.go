@@ -107,21 +107,43 @@ json = "login"
 	require.Equal(t, "{xdg_config}/my-gh", a.Dir.Global)
 }
 
-func TestDuplicateBinRejected(t *testing.T) {
-	dir := t.TempDir()
-	aaa := `name = "aaa"
-bin  = "gh"
+// userAdapter is a minimal user adapter named name that runs bin.
+func userAdapter(name, bin string) string {
+	return `name = "` + name + `"
+bin  = "` + bin + `"
 kind = "dir-overlay"
 [dir]
-global     = "{xdg_config}/aaa"
+global     = "{xdg_config}/` + name + `"
 inject     = { env = { AAA_CONFIG = "{dir}" } }
 auth_files = ["config.json"]
 [login]
-cmd = ["gh", "auth", "login"]
+cmd = ["` + bin + `", "login"]
 `
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "aaa.toml"), []byte(aaa), 0o600))
+}
+
+func TestDuplicateBinRejected(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "aaa.toml"), []byte(userAdapter("aaa", "mytool")), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bbb.toml"), []byte(userAdapter("bbb", "mytool")), 0o600))
 	_, err := LoadRegistry(dir)
-	require.ErrorContains(t, err, "both use bin")
+	require.ErrorContains(t, err, `adapters "aaa" and "bbb" both use bin "mytool"`)
+}
+
+func TestUserReplacesBuiltinByBin(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cloudflare.toml"), []byte(userAdapter("cloudflare", "wrangler")), 0o600))
+	r, err := LoadRegistry(dir)
+	require.NoError(t, err)
+	_, ok := r.Get("wrangler")
+	require.False(t, ok, "the built-in with the same bin is dropped")
+	require.Equal(t, "", r.Source("wrangler"))
+	require.Equal(t, "user", r.Source("cloudflare"))
+	a, ok := r.ByBin("wrangler")
+	require.True(t, ok)
+	require.Equal(t, "cloudflare", a.Name)
+	gh, ok := r.Get("gh")
+	require.True(t, ok, "other built-ins stay")
+	require.Equal(t, "builtin", r.Source(gh.Name))
 }
 
 func TestChildEnv(t *testing.T) {
