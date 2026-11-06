@@ -278,7 +278,9 @@ picks the account as the agent moves between them.
 
 Every process whoas starts gets `WHOAS_CONTEXT_DIR`, the directory it resolved
 from, so the [MCP servers](#mcp-servers-any-agent) an agent spawns use the
-identities of the project the agent was started in.
+identities of the project the agent was started in. A shim sets it again for
+each agent, but a long-lived `whoas run -- <shell>` sets it once: an agent
+started from that shell without a shim keeps the directory the shell started in.
 
 ## Claude Code accounts
 
@@ -324,7 +326,8 @@ through to your normal `/login`, which whoas never touches.
 `whoas mcp proxy` is a stdio MCP server that forwards to a remote MCP server
 with the API key of the identity chosen for the project. Every agent supports
 stdio servers, so the same entry works in Claude Code, Codex, Cursor, Gemini
-CLI, opencode or Hermes. Built in: PostHog (`mcp-posthog`, server `posthog`)
+CLI, opencode and any agent that accepts a stdio MCP entry (the generic
+`--print` entry). Built in: PostHog (`mcp-posthog`, server `posthog`)
 and Linear (`mcp-linear`, server `linear`).
 
 ```console
@@ -341,6 +344,11 @@ a `provider@alias` argument, then `WHOAS_PROFILE`, then the nearest trusted
 `.whoas.yaml` walking up from `WHOAS_CONTEXT_DIR` (or from the proxy's working
 directory when the agent wasn't started through whoas), then the default
 profile. `whoas which mcp-posthog` explains the choice.
+
+Trust is keyed by the file's path as whoas sees it. A project trusted through a
+symlinked path can count as untrusted for an agent that starts the proxy
+without `PWD`, since whoas then sees the real path; trust it from the real path
+too (`cd -P . && whoas trust`).
 
 The key never enters an environment, an argument list or a file: only the proxy
 process holds it, and sends it only to the adapter's URL. When something is
@@ -360,8 +368,17 @@ identity here), **3** (the vault is locked and needs a terminal: run
 
 `setup` runs the agent's own CLI and prints the command it ran; it refuses to
 overwrite an existing server of the same name unless you pass `--replace`.
-`--alias acme` pins `mcp-posthog@acme` wherever the agent runs. For other
-agents, `whoas mcp setup posthog --print` prints the generic entry:
+`--alias acme` pins `mcp-posthog@acme` wherever the agent runs. `--scope project`
+writes the entry, with the absolute path of your whoas binary, into the
+repository's `.mcp.json`, a file usually shared with the team.
+
+Agents that start servers from a global config (Cursor and others) may not
+start them in the project's directory, so the proxy can't find its
+`.whoas.yaml`. There, put the entry in the project's own config (such as
+`.cursor/mcp.json`) with the identity pinned: `--alias acme`, or
+`mcp-posthog@acme` as the proxy's argument.
+
+For other agents, `whoas mcp setup posthog --print` prints the generic entry:
 
 ```json
 {
@@ -398,8 +415,15 @@ args     = ["mcp", "proxy", "posthog"]
 env_vars = ["WHOAS_CONTEXT_DIR", "WHOAS_PROFILE"]
 ```
 
-**PostHog EU** (or another region): replace the built-in with a user adapter of
-the same name, pointing at your region's MCP URL (see PostHog's MCP docs):
+Add any `WHOAS_CONFIG_DIR`, `WHOAS_DATA_DIR`, `WHOAS_RUNTIME_DIR` or `XDG_*`
+variable you set to a non-default value as well (`XDG_RUNTIME_DIR` locates the
+`whoas agent` socket), or the proxy looks for its config, vault and agent in
+the default places.
+
+**PostHog EU** (or another region): EU Cloud keys are created at
+`https://eu.posthog.com/settings/user-api-keys` (the built-in's hint shows the US
+page). To use the EU endpoint `https://mcp-eu.posthog.com/mcp`, replace the
+built-in with a user adapter of the same name (see PostHog's MCP docs):
 
 ```toml
 # ~/.config/whoas/adapters/mcp-posthog.toml
@@ -414,6 +438,9 @@ headers = { Authorization = "Bearer {POSTHOG_API_KEY}" }
 [[secret]]
 env   = "POSTHOG_API_KEY"
 label = "PostHog personal API key (MCP Server preset)"
+
+[login]
+hint = "Create one at https://eu.posthog.com/settings/user-api-keys with the MCP Server preset"
 ```
 
 An agent with a shell can use any identity its profile grants, by starting
