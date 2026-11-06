@@ -1,6 +1,8 @@
 name = "spacectl"
 bin  = "spacectl"
 kind = "env-token"
+# spacectl tries SPACELIFT_API_TOKEN before API keys and then ignores them.
+unset_env = ["SPACELIFT_API_TOKEN"]
 
 [[secret]]
 env   = "SPACELIFT_API_KEY_ENDPOINT"

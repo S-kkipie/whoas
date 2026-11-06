@@ -1,6 +1,9 @@
 name = "databricks"
 bin  = "databricks"
 kind = "env-token"
+# DATABRICKS_AUTH_TYPE picks the auth method when several are available,
+# which would outrank the injected token (tried first by default).
+unset_env = ["DATABRICKS_AUTH_TYPE"]
 
 [[secret]]
 env   = "DATABRICKS_HOST"

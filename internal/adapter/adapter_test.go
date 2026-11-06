@@ -330,6 +330,10 @@ func TestTokenBuiltins(t *testing.T) {
 		a, _ := r.Get(n)
 		require.Equal(t, []string{"FLY_API_TOKEN"}, a.UnsetEnv, n)
 	}
+	spacectl, _ := r.Get("spacectl")
+	require.Equal(t, []string{"SPACELIFT_API_TOKEN"}, spacectl.UnsetEnv, "an API token makes spacectl ignore API keys")
+	databricks, _ := r.Get("databricks")
+	require.Equal(t, []string{"DATABRICKS_AUTH_TYPE"}, databricks.UnsetEnv, "it would pick another auth method over the token")
 
 	// hints point at a real page, without placeholders
 	for _, n := range r.Names() {
