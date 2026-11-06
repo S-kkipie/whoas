@@ -58,7 +58,7 @@ func TestParseRejects(t *testing.T) {
 		errSubstr string
 	}{
 		"unknown key":   {valid + "colour = \"blue\"\n", "unknown keys"},
-		"bad kind":      {replace(valid, `kind = "dir-overlay"`, `kind = "env-token"`), "not supported"},
+		"bad kind":      {replace(valid, `kind = "dir-overlay"`, `kind = "magic"`), "not supported"},
 		"abs auth":      {replace(valid, `"auth.json", "nested/dir"`, `"/etc/passwd"`), "clean relative slash path"},
 		"dotdot auth":   {replace(valid, `"auth.json", "nested/dir"`, `"../x"`), "clean relative slash path"},
 		"no dir ref":    {replace(valid, `FAKE_DIR = "{dir}"`, `FAKE_DIR = "/tmp"`), "must reference {dir}"},
@@ -137,4 +137,106 @@ func TestBuiltinUnsetEnv(t *testing.T) {
 	require.Contains(t, gh.UnsetEnv, "GH_TOKEN")
 	neon, _ := r.Get("neonctl")
 	require.Equal(t, []string{"NEON_API_KEY"}, neon.UnsetEnv)
+}
+
+const rootHome = `name = "rh"
+bin  = "rh"
+kind = "dir-overlay"
+experimental = true
+[dir]
+global      = "{home}"
+inject      = { env = { HOME = "{dir}" } }
+auth_files  = [".rh/config.json"]
+helper_keys = ["credsStore", "credHelpers"]
+[login]
+cmd = ["rh", "login"]
+`
+
+const token = `name = "tok"
+bin  = "tok"
+kind = "env-token"
+unset_env = ["TOK_LEGACY"]
+
+[[secret]]
+env   = "TOK_KEY"
+label = "Tok API Key"
+
+[[secret]]
+env      = "TOK_HOST"
+label    = "Tok Host"
+plain    = true
+optional = true
+
+[login]
+hint = "Create one at https://example.com/tokens"
+`
+
+func TestRootOverlays(t *testing.T) {
+	a, err := Parse([]byte(rootHome), "rh")
+	require.NoError(t, err)
+	require.True(t, a.Experimental)
+	require.Equal(t, []string{"credsStore", "credHelpers"}, a.Dir.HelperKeys)
+	require.Equal(t, "/h", a.GlobalDir(Vars{Home: "/h"}))
+
+	xdg := replace(replace(rootHome, `global      = "{home}"`, `global      = "{xdg_config}"`), `HOME = "{dir}"`, `XDG_CONFIG_HOME = "{dir}"`)
+	_, err = Parse([]byte(xdg), "xdg")
+	require.NoError(t, err)
+
+	for name, c := range map[string]struct{ body, errSubstr string }{
+		"root without its var":  {replace(rootHome, `HOME = "{dir}"`, `RH_DIR = "{dir}"`), `requires inject env HOME`},
+		"root with wrong var":   {replace(rootHome, `HOME = "{dir}"`, `XDG_CONFIG_HOME = "{dir}"`), `requires inject env HOME`},
+		"root var on subdir":    {replace(rootHome, `global      = "{home}"`, `global      = "{home}/.rh"`), `only allowed with dir.global = {home}`},
+		"root var not plain":    {replace(rootHome, `HOME = "{dir}"`, `HOME = "{dir}/x"`), `requires inject env HOME`},
+		"bad helper key":        {replace(rootHome, `"credsStore", "credHelpers"`, `"creds.Store"`), `plain top-level JSON key`},
+		"secret on dir-overlay": {rootHome + "[[secret]]\nenv = \"X\"\n", `only valid for env-token`},
+	} {
+		_, err := Parse([]byte(c.body), name)
+		require.ErrorContains(t, err, c.errSubstr, name)
+	}
+}
+
+func TestEnvTokenAdapter(t *testing.T) {
+	a, err := Parse([]byte(token), "tok")
+	require.NoError(t, err)
+	require.Equal(t, KindEnvToken, a.Kind)
+	require.Equal(t, []Secret{
+		{Env: "TOK_KEY", Label: "Tok API Key"},
+		{Env: "TOK_HOST", Label: "Tok Host", Plain: true, Optional: true},
+	}, a.Secrets)
+	require.Equal(t, "Tok API Key (TOK_KEY)", a.Secrets[0].PromptLabel())
+	require.Equal(t, "X", Secret{Env: "X"}.PromptLabel())
+
+	lower := replace(token, `env   = "TOK_KEY"`, `env   = "TF_TOKEN_app_terraform_io"`)
+	_, err = Parse([]byte(lower), "lowercase env")
+	require.NoError(t, err, "env var names may contain lowercase")
+
+	for name, c := range map[string]struct{ body, errSubstr string }{
+		"dir section":     {token + "[dir]\nglobal = \"{home}/.t\"\n", "[dir] is not valid"},
+		"login cmd":       {replace(token, `hint = "Create one at https://example.com/tokens"`, `cmd = ["tok", "login"]`), "login.cmd is not valid"},
+		"no secrets":      {"name = \"tok\"\nbin = \"tok\"\nkind = \"env-token\"\n", "at least one [[secret]]"},
+		"duplicate env":   {replace(token, `env      = "TOK_HOST"`, `env      = "TOK_KEY"`), "declared twice"},
+		"bad env":         {replace(token, `env   = "TOK_KEY"`, `env   = "tok-key"`), "secret env name"},
+		"secret in unset": {replace(token, `unset_env = ["TOK_LEGACY"]`, `unset_env = ["TOK_KEY"]`), "cannot also be in unset_env"},
+	} {
+		_, err := Parse([]byte(c.body), name)
+		require.ErrorContains(t, err, c.errSubstr, name)
+	}
+}
+
+func TestSecretEnv(t *testing.T) {
+	a, err := Parse([]byte(token), "tok")
+	require.NoError(t, err)
+	base := []string{"PATH=/bin", "TOK_LEGACY=old", "TOK_KEY=inherited", "TOK_KEYX=keep"}
+	got := a.SecretEnv(base, map[string]string{"TOK_KEY": "k1", "TOK_HOST": ""})
+	require.Equal(t, []string{"PATH=/bin", "TOK_KEYX=keep", "TOK_KEY=k1"}, got)
+}
+
+func TestRegistrySource(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tok.toml"), []byte(token), 0o600))
+	r, err := LoadRegistry(dir)
+	require.NoError(t, err)
+	require.Equal(t, "user", r.Source("tok"))
+	require.Equal(t, "builtin", r.Source("gh"))
+	require.Equal(t, "", r.Source("nope"))
 }
