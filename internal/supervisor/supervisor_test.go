@@ -285,7 +285,7 @@ func TestPromoteFailureIsAWarning(t *testing.T) {
 	}
 	f := newFixture(t, `printf new > "$FAKE_DIR/auth.json"; printf x > "$FAKE_DIR/newfile"`)
 	require.NoError(t, os.Chmod(f.global, 0o500))
-	t.Cleanup(func() { os.Chmod(f.global, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(f.global, 0o700) })
 
 	var stderr bytes.Buffer
 	f.plan.Stderr = &stderr
