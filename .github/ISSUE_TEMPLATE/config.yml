@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/S-kkipie/whoas/discussions
+    about: Ask how to do something or discuss an idea in GitHub Discussions.
+  - name: Report a security vulnerability
+    url: https://github.com/S-kkipie/whoas/security/advisories/new
+    about: Report it privately, never in a public issue.

@@ -1,0 +1,81 @@
+name: Bug report
+description: whoas did something wrong or unexpected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste tokens, session files (`hosts.yml`, `auth.json`, …) or secrets.**
+        `whoas doctor` never prints secrets, but its paths and warnings can contain your
+        username or account names: redact them (`/home/you`, `octocat`).
+        Found a security problem? Report it privately instead:
+        https://github.com/S-kkipie/whoas/security/advisories/new
+  - type: input
+    id: version
+    attributes:
+      label: whoas version
+      description: Output of `whoas version`
+      placeholder: whoas v0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - WSL
+        - macOS
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-details
+    attributes:
+      label: OS details
+      description: Distribution / macOS version, architecture, shell
+      placeholder: Ubuntu 24.04 on WSL2, amd64, zsh
+  - type: input
+    id: keystore
+    attributes:
+      label: Keystore
+      description: The `keystore` line of `whoas doctor`, path redacted
+      placeholder: wsl (Windows Credential Manager via /home/you/.local/bin/whoas.exe)
+  - type: input
+    id: cli
+    attributes:
+      label: CLI and adapter involved
+      description: The CLI and its version, if the bug is about one (`gh 2.63.0`, `whoas mcp proxy posthog`, …)
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands you ran, with identities renamed if you like (`gh@work`).
+      render: console
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead, with the error output (redacted).
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: whoas doctor output (redacted)
+      render: text
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Before submitting
+      options:
+        - label: This report contains no tokens, session files or secrets.
+          required: true
