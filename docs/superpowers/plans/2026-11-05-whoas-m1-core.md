@@ -28,7 +28,7 @@
 ## Prerequisites
 
 - [ ] Go ≥ 1.25 on PATH (`go version`). If missing: download from https://go.dev/dl/ and add `<goroot>/bin` to PATH.
-- [ ] Work in `/home/skkippie/work/AI-DO/whoas` (git repo already holds the spec). Run every command from the repo root.
+- [ ] Work in the repository root (it already holds the spec). Run every command from the repo root.
 
 ## File Structure
 
