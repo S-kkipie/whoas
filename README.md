@@ -74,9 +74,11 @@ config.
 also see the overlay `HOME`. The banner and `whoas providers` mark it.
 
 **Root overlays** (`railway`: all of `~`; `wrangler`: all of `~/.config`): tools
-that save a dotfile by writing a new file and renaming it — `git config --global`,
-some shells' history — lose that change inside a root overlay; whoas warns when
-it happens (`whoas: warning: railway@work: .gitconfig was replaced during the run; …`).
+that save a dotfile by writing a new file and renaming it (`git config --global`,
+some shells' history) replace the mirrored symlink inside the overlay. whoas copies
+such an edit back to the real file when that file did not change during the run; it
+warns, and keeps the global copy, only when both changed
+(`whoas: warning: railway@work: .gitconfig was replaced during the run, but <path> changed too (or is not a plain file); kept the global copy`).
 
 **wrangler:** a legacy `~/.wrangler` directory wins over `$XDG_CONFIG_HOME` in
 wrangler and would bypass the overlay, so whoas refuses to add or run wrangler

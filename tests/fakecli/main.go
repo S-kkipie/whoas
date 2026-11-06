@@ -11,6 +11,7 @@
 //	refresh        rotate the token (gen+1) via write-to-temp + rename
 //	dir            print "dir=<config dir>"
 //	setting K V    write settings/K.txt = V (non-auth shared state)
+//	renamewrite P V  write $HOME/P.tmp = V, then rename it over $HOME/P
 //	sleep MS       sleep MS milliseconds
 //	trap           wait for SIGTERM or SIGINT, print "trapped=TERM|INT", exit 42
 //	exit N         exit with code N
@@ -135,6 +136,18 @@ func main() {
 				fail("%v", err)
 			}
 			if err := os.WriteFile(p, []byte(args[1]), 0o600); err != nil {
+				fail("%v", err)
+			}
+			args = args[2:]
+		case "renamewrite":
+			if len(args) < 2 {
+				fail("renamewrite needs PATH VALUE")
+			}
+			p := filepath.Join(os.Getenv("HOME"), filepath.FromSlash(args[0]))
+			if err := os.WriteFile(p+".tmp", []byte(args[1]), 0o600); err != nil {
+				fail("%v", err)
+			}
+			if err := os.Rename(p+".tmp", p); err != nil {
 				fail("%v", err)
 			}
 			args = args[2:]

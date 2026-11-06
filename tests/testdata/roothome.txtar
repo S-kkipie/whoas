@@ -23,6 +23,14 @@ stdout '^token=tok-work-1$'
 exec whoas fakehome@work setting theme dark
 exists $HOME/.fakecli/settings/theme.txt
 
+# an existing dotfile saved by write-temp-then-rename is copied back to the real home
+exec sh -c 'echo before > "$HOME/.rc"'
+exec whoas fakehome@work renamewrite .rc after
+! stderr 'warning'
+exec cat $HOME/.rc
+stdout '^after$'
+! exists $HOME/.rc.tmp
+
 # experimental adapters are marked in the banner
 env WHOAS_BANNER=always
 exec whoas fakehome@work whoami

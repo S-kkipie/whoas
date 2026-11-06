@@ -4,6 +4,7 @@
 package overlay
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -41,7 +42,11 @@ func Build(dir, global string, authPaths []string, files map[string]envelope.Fil
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	if err := mirror(dir, global, ".", auth, anc); err != nil {
+	records := map[string]fingerprint{}
+	if err := mirror(dir, global, ".", auth, anc, records); err != nil {
+		return err
+	}
+	if err := writeManifest(dir, global, records); err != nil {
 		return err
 	}
 	for rel, f := range files {
@@ -81,7 +86,7 @@ func Build(dir, global string, authPaths []string, files map[string]envelope.Fil
 	return nil
 }
 
-func mirror(dir, global, rel string, auth, anc map[string]bool) error {
+func mirror(dir, global, rel string, auth, anc map[string]bool, records map[string]fingerprint) error {
 	entries, err := os.ReadDir(filepath.Join(global, rel))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -98,16 +103,77 @@ func mirror(dir, global, rel string, auth, anc map[string]bool) error {
 			if err := os.MkdirAll(filepath.Join(dir, child), 0o700); err != nil {
 				return err
 			}
-			if err := mirror(dir, global, child, auth, anc); err != nil {
+			if err := mirror(dir, global, child, auth, anc, records); err != nil {
 				return err
 			}
 		default:
 			if err := os.Symlink(filepath.Join(global, child), filepath.Join(dir, child)); err != nil {
 				return err
 			}
+			if info, err := os.Lstat(filepath.Join(global, child)); err == nil {
+				records[filepath.ToSlash(child)] = fingerprintOf(info)
+			}
 		}
 	}
 	return nil
+}
+
+// fingerprint identifies a global entry as it was when Build mirrored it.
+type fingerprint struct {
+	File  bool   `json:"file"` // regular file
+	Size  int64  `json:"size"`
+	MTime int64  `json:"mtime"` // ns
+	Mode  uint32 `json:"mode"`
+}
+
+func fingerprintOf(info fs.FileInfo) fingerprint {
+	return fingerprint{File: info.Mode().IsRegular(), Size: info.Size(), MTime: info.ModTime().UnixNano(), Mode: uint32(info.Mode())}
+}
+
+// manifestPath lives next to dir, never inside it: the CLI would see a file in
+// the overlay (for a root overlay, in $HOME).
+func manifestPath(dir string) string { return filepath.Clean(dir) + ".mirror.json" }
+
+// manifest is what Build records: the global dir it mirrored and a
+// fingerprint per mirrored entry.
+type manifest struct {
+	Global  string                 `json:"global"`
+	Entries map[string]fingerprint `json:"entries"`
+}
+
+func writeManifest(dir, global string, records map[string]fingerprint) error {
+	data, err := json.Marshal(manifest{Global: global, Entries: records})
+	if err != nil {
+		return err
+	}
+	path := manifestPath(dir)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// readManifest returns nil when the manifest is missing or unreadable (an
+// overlay from an older whoas or a crashed build), or was recorded for another
+// global dir (recovery under a changed HOME/XDG): nothing is copied back.
+func readManifest(dir, global string) map[string]fingerprint {
+	data, err := os.ReadFile(manifestPath(dir))
+	if err != nil {
+		return nil
+	}
+	var m manifest
+	if json.Unmarshal(data, &m) != nil {
+		return nil
+	}
+	if abs, err := filepath.Abs(global); err != nil || abs != m.Global {
+		return nil
+	}
+	return m.Entries
 }
 
 // Collect reads the auth paths under root (files or whole dirs).
@@ -170,20 +236,29 @@ var rename = os.Rename
 
 // Promote moves entries the CLI created inside dir (real files or dirs, not
 // auth, not symlinks) into global when global lacks them, so non-auth state
-// stays shared. Existing global entries always win: it returns, as slash
-// paths relative to dir, the non-auth entries that global already has but
-// that are no longer symlinks in dir. Those were mirrored and then replaced
-// during the run (e.g. a dotfile saved by writing a new file and renaming
-// it), so the change is not copied back.
+// stays shared. It never writes auth files to global.
+//
+// Entries global already has that are no longer symlinks in dir were mirrored
+// and then replaced during the run (e.g. a dotfile saved by writing a new file
+// and renaming it). Such a regular file is copied back over the global file
+// when the manifest Build wrote shows the global file unchanged since (same
+// size, mtime, mode). Otherwise (no manifest, a directory, global not a plain
+// file or changed too) the global entry wins and Promote returns the name, as
+// a slash path relative to dir.
+//
+// Two identities of the same CLI that both replace the same file: the first to
+// promote copies back, the second sees the global changed and is reported. The
+// check-then-rename window is a small TOCTOU, accepted: no auth file is ever
+// touched and a global entry that changed is never deleted.
 func Promote(dir, global string, authPaths []string) ([]string, error) {
 	auth, anc := split(authPaths)
 	var replaced []string
-	err := promote(dir, global, ".", auth, anc, &replaced)
+	err := promote(dir, global, ".", auth, anc, readManifest(dir, global), &replaced)
 	sort.Strings(replaced)
 	return replaced, err
 }
 
-func promote(dir, global, rel string, auth, anc map[string]bool, replaced *[]string) error {
+func promote(dir, global, rel string, auth, anc map[string]bool, records map[string]fingerprint, replaced *[]string) error {
 	entries, err := os.ReadDir(filepath.Join(dir, rel))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -197,14 +272,23 @@ func promote(dir, global, rel string, auth, anc map[string]bool, replaced *[]str
 			continue
 		}
 		if anc[child] {
-			if err := promote(dir, global, child, auth, anc, replaced); err != nil {
+			if err := promote(dir, global, child, auth, anc, records, replaced); err != nil {
 				return err
 			}
 			continue
 		}
 		dst := filepath.Join(global, child)
-		if _, err := os.Lstat(dst); err == nil {
-			*replaced = append(*replaced, filepath.ToSlash(child))
+		if gi, err := os.Lstat(dst); err == nil {
+			name := filepath.ToSlash(child)
+			rec, ok := records[name]
+			if ok && rec.File && e.Type().IsRegular() && gi.Mode().IsRegular() && fingerprintOf(gi) == rec {
+				if err := copyBack(filepath.Join(dir, child), dst); err != nil {
+					// global copy kept: report it and keep promoting the rest
+					*replaced = append(*replaced, name)
+				}
+				continue
+			}
+			*replaced = append(*replaced, name)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
@@ -215,6 +299,59 @@ func promote(dir, global, rel string, auth, anc map[string]bool, replaced *[]str
 		}
 	}
 	return nil
+}
+
+// copyBack moves the regular file src over the existing dst, keeping src's
+// mode. Across filesystems it copies to a temp name beside dst first.
+func copyBack(src, dst string) error {
+	err := rename(src, dst)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+	// src must still be the regular file Promote saw: a process that outlived
+	// the CLI could have swapped it for a symlink to an auth file.
+	info, err := os.Lstat(src)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is no longer a regular file", src)
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if fi, err := in.Stat(); err != nil || !os.SameFile(info, fi) {
+		return fmt.Errorf("%s changed while copying back", src)
+	}
+	tmp := fmt.Sprintf("%s.whoas-tmp-%d", dst, os.Getpid())
+	_ = os.Remove(tmp)
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Chmod(tmp, info.Mode().Perm()); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Remove(src)
 }
 
 // move renames src to dst, falling back to copy+delete across filesystems (tmpfs → home).
@@ -288,5 +425,13 @@ func copyFile(src, dst string, perm os.FileMode) error {
 	return out.Close()
 }
 
-// Remove deletes dir; symlinks are removed, never followed.
-func Remove(dir string) error { return os.RemoveAll(dir) }
+// Remove deletes dir (symlinks are removed, never followed) and its manifest.
+func Remove(dir string) error {
+	err := os.RemoveAll(dir)
+	for _, p := range []string{manifestPath(dir), manifestPath(dir) + ".tmp"} {
+		if merr := os.Remove(p); merr != nil && !errors.Is(merr, fs.ErrNotExist) && err == nil {
+			err = merr
+		}
+	}
+	return err
+}

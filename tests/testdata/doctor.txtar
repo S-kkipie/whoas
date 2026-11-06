@@ -20,9 +20,11 @@ stdout '^recovered\s+0 stale overlay'
 
 # doctor sweeps capture dirs left by add/import runs that died
 mkdir run/capture/fakecli/ghost-2147483647
+exec sh -c 'echo {} > run/capture/fakecli/ghost-2147483647.mirror.json'
 exec whoas doctor
 stdout '^captures\s+removed 1 stale capture dir'
 ! exists run/capture/fakecli/ghost-2147483647
+! exists run/capture/fakecli/ghost-2147483647.mirror.json
 
 # agent: start, unlock, use, lock
 exec whoas agent &ag&
