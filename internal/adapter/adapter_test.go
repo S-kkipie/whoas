@@ -511,13 +511,17 @@ func TestClaudeBuiltin(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "claude", c.Name)
 	require.Equal(t, KindEnvToken, c.Kind)
-	require.Equal(t, []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"}, c.UnsetEnv)
+	unset := []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_MANTLE"}
+	require.Equal(t, unset, c.UnsetEnv, "everything that outranks CLAUDE_CODE_OAUTH_TOKEN or selects another provider")
 	require.Equal(t, []Secret{{Env: "CLAUDE_CODE_OAUTH_TOKEN", Label: "Claude subscription token"}}, c.Secrets)
 	require.Equal(t, []string{"claude", "setup-token"}, c.Login.Cmd)
 	require.Equal(t, "Pick the account in your browser, then paste the token claude prints.", c.Login.Hint)
 	require.Empty(t, c.Whoami.Cmd, "no whoami: Claude has none that does not spend quota")
 
-	base := []string{"PATH=/bin", "ANTHROPIC_API_KEY=api", "CLAUDE_CODE_USE_BEDROCK=1", "CLAUDE_CODE_OAUTH_TOKEN=shell"}
+	base := []string{"PATH=/bin", "CLAUDE_CODE_OAUTH_TOKEN=shell"}
+	for _, k := range unset {
+		base = append(base, k+"=1")
+	}
 	require.Equal(t, []string{"PATH=/bin", "CLAUDE_CODE_OAUTH_TOKEN=sub"}, c.SecretEnv(base, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "sub"}))
 }
 

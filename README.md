@@ -302,8 +302,10 @@ With shims (or `whoas run`), a plain `claude` in a repo whose `.whoas.yaml` says
 `claude: team` runs as `claude@team`; where no identity applies it passes
 through to your normal `/login`, which whoas never touches.
 
-- `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` and
-  `CLAUDE_CODE_USE_VERTEX` are removed from the session: they outrank the token.
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and the provider switches
+  `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`,
+  `CLAUDE_CODE_USE_ANTHROPIC_AWS` and `CLAUDE_CODE_USE_MANTLE` are removed from
+  the session: they outrank the token or send requests to another provider.
   An `apiKeyHelper` in `settings.json` outranks it too and cannot be removed from
   the environment; `whoas doctor` warns when one is set.
 - A token session can only make model requests: no Remote Control and no
