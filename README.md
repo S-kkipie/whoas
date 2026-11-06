@@ -15,6 +15,10 @@
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Linux%20%7C%20WSL%20%7C%20macOS-informational">
 </p>
 
+<p align="center">
+  <img src="docs/demo.gif" alt="whoas demo: whoas ls lists gh@personal (octocat), gh@work (octo-corp) and claude@work; whoas gh@work and gh@personal print different logins; a trusted .whoas.yaml makes plain gh resolve to gh@work through the shim; whoas which gh explains why" width="790">
+</p>
+
 ```console
 $ whoas add gh work               # log in once, through gh's own browser flow
 $ whoas add gh personal

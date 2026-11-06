@@ -32,6 +32,11 @@ that runs the real `whoas` binary against fake CLIs (`tests/fakecli`) and a
 fake MCP server (`tests/fakemcp`). Run one with
 `go test ./tests -run TestScripts/shims`.
 
+The README demo, `docs/demo.gif`, is generated: `docs/demo/demo.sh` records it
+in a sandbox with a fake `gh` (needs python3 and
+[agg](https://github.com/asciinema/agg/releases)). Re-run it when the commands it
+shows change their output.
+
 ## Project layout
 
 | Path | What lives there |
