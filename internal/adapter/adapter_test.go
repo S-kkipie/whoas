@@ -314,12 +314,13 @@ func TestTokenBuiltins(t *testing.T) {
 	require.Equal(t, "TF_TOKEN_app_terraform_io", terraform.Secrets[0].Env)
 	stripe, _ := r.Get("stripe")
 	require.Equal(t, "STRIPE_API_KEY", stripe.Secrets[0].Env)
-	for _, n := range []string{"agent", "psql", "forge"} {
+	// forge is Foundry's bin too; dog, grok and td collide with other CLIs
+	for _, n := range []string{"agent", "psql", "forge", "dog", "grok", "td"} {
 		_, ok := r.Get(n)
 		require.False(t, ok, "%s is intentionally not a built-in", n)
+		_, ok = r.ByBin(n)
+		require.False(t, ok, "%s is intentionally not a built-in bin", n)
 	}
-	_, ok = r.ByBin("forge")
-	require.False(t, ok, "forge is Foundry's bin too")
 
 	// competing variables that would outrank the injected token are removed
 	hf, _ := r.Get("hf")

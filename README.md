@@ -95,8 +95,8 @@ CLIs that authenticate with an API token instead of a login get an
 env var for that one process. Built in: `supabase`, `terraform` (HCP Terraform),
 `stripe`, `openai`, `netlify`, `fly`/`flyctl`, `glab`, `doppler`, `snyk`,
 `sentry-cli`, `pulumi`, `hcloud`, `vultr-cli`, `linode-cli`, `twilio`,
-`upstash`, `vault`, `gemini`, `grok`, `cargo`, `brew`, [`claude`](#claude-code-accounts)
-and 42 more (65 in all) — `whoas providers --all` lists them all.
+`upstash`, `vault`, `gemini`, `cargo`, `brew`, [`claude`](#claude-code-accounts)
+and 40 more (62 in all) — `whoas providers --all` lists them all.
 
 ```console
 $ whoas add stripe work            # asks for the key; typing is not echoed
