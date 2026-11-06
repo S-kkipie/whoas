@@ -1,0 +1,10 @@
+name = "vapor"
+bin  = "vapor"
+kind = "env-token"
+
+[[secret]]
+env   = "VAPOR_API_TOKEN"
+label = "Laravel Vapor API Token"
+
+[login]
+hint = "Create one at https://vapor.laravel.com/app/account/api-tokens"

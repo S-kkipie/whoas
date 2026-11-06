@@ -1,0 +1,10 @@
+name = "ntn"
+bin  = "ntn"
+kind = "env-token"
+
+[[secret]]
+env   = "NOTION_API_TOKEN"
+label = "Notion Access Token"
+
+[login]
+hint = "Create one at https://www.notion.so/profile/integrations"

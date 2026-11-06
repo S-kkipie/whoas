@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/S-kkipie/whoas/internal/adapter"
+	"github.com/S-kkipie/whoas/internal/envelope"
 	"github.com/S-kkipie/whoas/internal/overlay"
 	"github.com/S-kkipie/whoas/internal/ref"
 )
@@ -15,9 +18,10 @@ import (
 func init() { register(newAddCmd) }
 
 func newAddCmd() *cobra.Command {
-	return &cobra.Command{
+	var fromStdin bool
+	cmd := &cobra.Command{
 		Use:   "add <provider> <alias>",
-		Short: "Log in through the CLI and save the session as provider@alias",
+		Short: "Log in through the CLI (or enter its API token) and save it as provider@alias",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := loadEnv()
@@ -32,12 +36,32 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := a.CheckConflicts(e.vars()); err != nil {
+				return err
+			}
 			v, err := e.initVault()
 			if err != nil {
 				return err
 			}
 			if v.Exists(r) {
 				return fmt.Errorf("%s already exists (whoas rm %s first)", r, r)
+			}
+			if a.Kind == adapter.KindEnvToken {
+				if a.Login.Hint != "" {
+					fmt.Fprintln(cmd.ErrOrStderr(), "hint:", a.Login.Hint)
+				}
+				values, err := readSecrets(a, fromStdin, cmd.InOrStdin(), ttyAsk)
+				if err != nil {
+					return err
+				}
+				account := ""
+				if bin, err := e.realBin(a.Bin); err == nil {
+					account = whoamiWithSecrets(a, bin, values)
+				}
+				return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, envelope.FromSecrets(r.Provider, values).Files, account)
+			}
+			if fromStdin {
+				return errors.New("--stdin is only for env-token adapters")
 			}
 			bin, err := e.realBin(a.Bin)
 			if err != nil {
@@ -70,7 +94,13 @@ func newAddCmd() *cobra.Command {
 			if len(files) == 0 {
 				return fmt.Errorf("login produced none of %v; nothing saved", a.Dir.AuthFiles)
 			}
-			return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, whoami(a, bin, dir))
+			if err := e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, whoami(a, bin, dir)); err != nil {
+				return err
+			}
+			warnHelperKeys(cmd.ErrOrStderr(), r, a, files)
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&fromStdin, "stdin", false, "env-token adapters: read one secret per line from stdin")
+	return cmd
 }

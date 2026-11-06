@@ -89,6 +89,11 @@ func (e *env) decrypter() (vault.Decrypter, error) {
 	return keysource.Decrypter(e.dirs.AgentSocket(), st, self())
 }
 
+// binIndex lists PATH once for resolving many CLIs (providers, shims).
+func (e *env) binIndex() *binpath.Index {
+	return binpath.NewIndex(os.Getenv("PATH"), e.dirs.ShimsDir(), self())
+}
+
 // realBin finds the real CLI, skipping shims and whoas itself.
 func (e *env) realBin(name string) (string, error) {
 	return binpath.Find(name, os.Getenv("PATH"), e.dirs.ShimsDir(), self())

@@ -27,6 +27,10 @@ func TestMain(m *testing.M) {
 	for _, b := range []struct{ out, pkg string }{
 		{"whoas", "github.com/S-kkipie/whoas/cmd/whoas"},
 		{"fakecli", "github.com/S-kkipie/whoas/tests/fakecli"},
+		// the same fake CLI under other names, one per fake adapter (bins are unique)
+		{"fakehome", "github.com/S-kkipie/whoas/tests/fakecli"},
+		{"faketok", "github.com/S-kkipie/whoas/tests/fakecli"},
+		{"fakedock", "github.com/S-kkipie/whoas/tests/fakecli"},
 	} {
 		cmd := exec.Command("go", "build", "-o", filepath.Join(dir, b.out), b.pkg)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
@@ -53,8 +57,10 @@ func TestScripts(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(cfg, "adapters"), 0o700); err != nil {
 				return err
 			}
-			if err := os.WriteFile(filepath.Join(cfg, "adapters", "fakecli.toml"), []byte(fakeAdapter), 0o600); err != nil {
-				return err
+			for name, body := range fakeAdapters {
+				if err := os.WriteFile(filepath.Join(cfg, "adapters", name), []byte(body), 0o600); err != nil {
+					return err
+				}
 			}
 			env.Setenv("PATH", binDir+string(os.PathListSeparator)+env.Getenv("PATH"))
 			env.Setenv("HOME", home)

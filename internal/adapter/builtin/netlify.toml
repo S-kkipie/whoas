@@ -1,0 +1,10 @@
+name = "netlify"
+bin  = "netlify"
+kind = "env-token"
+
+[[secret]]
+env   = "NETLIFY_AUTH_TOKEN"
+label = "Netlify Personal Access Token"
+
+[login]
+hint = "Create one at https://app.netlify.com/user/applications#personal-access-tokens"

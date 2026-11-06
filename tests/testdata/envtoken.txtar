@@ -1,0 +1,78 @@
+# env-token adapters: API tokens injected as env vars, never printed.
+stdin keys-work
+exec whoas add faketok work --stdin
+stdout 'saved faketok@work \(account=work\)'
+stderr 'hint: fake token hint'
+! stdout 'work-secret'
+! stderr 'work-secret'
+
+# import takes the token from the environment
+env FAKETOK_KEY=personal-secret
+exec whoas import faketok personal
+stdout 'saved faketok@personal \(account=personal\)'
+! stdout 'personal-secret'
+! stderr 'personal-secret'
+env FAKETOK_KEY=
+! exec whoas import faketok other
+stderr 'not set in the environment: \$FAKETOK_KEY'
+
+# the stored token wins over the shell's; identity-overriding vars are removed
+env FAKETOK_KEY=shell-secret
+env FAKETOK_LEGACY=old
+exec whoas faketok@work envkey FAKETOK_LEGACY envkey FAKETOK_HOST tokwho
+stdout '^FAKETOK_LEGACY=unset$'
+stdout '^FAKETOK_HOST=set$'
+stdout '^account=work$'
+! stdout 'work-secret'
+! stdout 'shell-secret'
+! stderr 'work-secret'
+! stderr 'shell-secret'
+exec whoas faketok@personal envkey FAKETOK_HOST tokwho
+stdout '^FAKETOK_HOST=unset$'
+stdout '^account=personal$'
+! stdout 'personal-secret'
+! stderr 'personal-secret'
+env FAKETOK_KEY=
+env FAKETOK_LEGACY=
+
+# exit codes pass through; no holders, so nothing is "active"
+expect-exit 7 whoas faketok@work exit 7
+exec whoas ls faketok
+stdout 'faketok@personal\s+account=personal\s+-'
+stdout 'faketok@work\s+account=work\s+-'
+! stdout 'personal-secret'
+! stdout 'work-secret'
+! stderr 'personal-secret'
+! stderr 'work-secret'
+
+# profiles and shims work as for any adapter
+exec whoas profile set work faketok@work
+! stdout 'work-secret'
+! stderr 'work-secret'
+exec whoas shims install
+! stdout 'work-secret'
+! stderr 'work-secret'
+env PATH=$WORK/data/shims:$PATH
+! exec faketok tokwho
+stderr 'no key'
+! stderr 'work-secret'
+env WHOAS_PROFILE=work
+exec faketok tokwho
+stdout '^account=work$'
+! stdout 'work-secret'
+! stderr 'work-secret'
+env WHOAS_PROFILE=
+
+# --stdin is only for env-token adapters
+! exec whoas add fakecli x --stdin
+stderr 'only for env-token'
+
+# the vault never holds the token in plaintext
+grep 'age-encryption.org/v1' $WORK/data/vault/faketok/work.age
+! grep 'work-secret' $WORK/data/vault/faketok/work.age
+exec whoas rm faketok@personal
+stdout 'removed faketok@personal'
+
+-- keys-work --
+work-secret
+fake.example.com

@@ -1,0 +1,10 @@
+name = "ibmcloud"
+bin  = "ibmcloud"
+kind = "env-token"
+
+[[secret]]
+env   = "IBMCLOUD_API_KEY"
+label = "IBM Cloud API Key"
+
+[login]
+hint = "Create one at https://cloud.ibm.com/iam/overview"

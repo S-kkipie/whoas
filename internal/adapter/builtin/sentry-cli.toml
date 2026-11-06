@@ -1,0 +1,28 @@
+name = "sentry-cli"
+bin  = "sentry-cli"
+kind = "env-token"
+
+[[secret]]
+env   = "SENTRY_AUTH_TOKEN"
+label = "Sentry Token"
+
+[[secret]]
+env   = "SENTRY_ORG"
+label = "Sentry Organization"
+plain = true
+optional = true
+
+[[secret]]
+env   = "SENTRY_PROJECT"
+label = "Sentry Project"
+plain = true
+optional = true
+
+[[secret]]
+env   = "SENTRY_URL"
+label = "Sentry URL"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://sentry.io/settings/account/api/auth-tokens/"

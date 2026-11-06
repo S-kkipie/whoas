@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/agent"
 	"github.com/S-kkipie/whoas/internal/ref"
 	"github.com/S-kkipie/whoas/internal/runlock"
@@ -23,7 +24,6 @@ import (
 
 func init() {
 	register(newDoctorCmd)
-	register(newProvidersCmd)
 }
 
 func newDoctorCmd() *cobra.Command {
@@ -98,8 +98,8 @@ func recoverAll(e *env, v *vault.Vault) (int, error) {
 		}
 		r := ref.Ref{Provider: filepath.ToSlash(filepath.Dir(rel)), Alias: filepath.Base(rel)}
 		a, ok := e.registry.Get(r.Provider)
-		if !ok {
-			return nil
+		if !ok || a.Kind != adapter.KindDirOverlay {
+			return nil // env-token runs have no overlay to recover
 		}
 		found, err := supervisor.Recover(context.Background(), base, a.GlobalDir(e.vars()), a, r, v)
 		if found {
@@ -142,29 +142,4 @@ func sweepCaptures(root string) (int, error) {
 		return fs.SkipDir
 	})
 	return n, err
-}
-
-func newProvidersCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "providers",
-		Short: "List adapters and whether their CLI is installed",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			e, err := loadEnv()
-			if err != nil {
-				return err
-			}
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 4, 2, ' ', 0)
-			fmt.Fprintln(tw, "PROVIDER\tBIN\tKIND\tINSTALLED")
-			for _, n := range e.registry.Names() {
-				a, _ := e.registry.Get(n)
-				installed := "-"
-				if p, err := e.realBin(a.Bin); err == nil {
-					installed = p
-				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", a.Name, a.Bin, a.Kind, installed)
-			}
-			return tw.Flush()
-		},
-	}
 }

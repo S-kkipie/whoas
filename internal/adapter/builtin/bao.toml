@@ -1,0 +1,22 @@
+name = "bao"
+bin  = "bao"
+kind = "env-token"
+
+[[secret]]
+env   = "BAO_TOKEN"
+label = "OpenBao Token"
+
+[[secret]]
+env   = "BAO_ADDR"
+label = "OpenBao Address"
+plain = true
+optional = true
+
+[[secret]]
+env   = "BAO_NAMESPACE"
+label = "OpenBao Namespace"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://openbao.org/docs/concepts/tokens/"

@@ -1,0 +1,10 @@
+name = "linode-cli"
+bin  = "linode-cli"
+kind = "env-token"
+
+[[secret]]
+env   = "LINODE_CLI_TOKEN"
+label = "Linode Personal Access Token"
+
+[login]
+hint = "Create one at https://cloud.linode.com/profile/tokens"

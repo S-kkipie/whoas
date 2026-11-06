@@ -1,0 +1,22 @@
+name      = "wrangler"
+bin       = "wrangler"
+kind      = "dir-overlay"
+unset_env = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_KEY"]
+
+[dir]
+# wrangler keeps its OAuth sessions (every wrangler auth profile) under
+# $XDG_CONFIG_HOME/.wrangler/config, so the overlay root is all of ~/.config.
+global     = "{xdg_config}"
+inject     = { env = { XDG_CONFIG_HOME = "{dir}" } }
+auth_files = [".wrangler/config"]
+# A legacy ~/.wrangler directory wins over $XDG_CONFIG_HOME in wrangler, which
+# would bypass the overlay: whoas refuses to run while it exists.
+conflicts  = ["{home}/.wrangler"]
+
+[login]
+cmd  = ["wrangler", "login"]
+hint = "If your browser is signed in to another Cloudflare account, switch accounts there first. If ~/.wrangler exists, move it to ~/.config/.wrangler first."
+
+[whoami]
+cmd  = ["wrangler", "whoami", "--json"]
+json = "email"

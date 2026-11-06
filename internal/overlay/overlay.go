@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -169,13 +170,20 @@ var rename = os.Rename
 
 // Promote moves entries the CLI created inside dir (real files or dirs, not
 // auth, not symlinks) into global when global lacks them, so non-auth state
-// stays shared. Existing global entries always win.
-func Promote(dir, global string, authPaths []string) error {
+// stays shared. Existing global entries always win: it returns, as slash
+// paths relative to dir, the non-auth entries that global already has but
+// that are no longer symlinks in dir. Those were mirrored and then replaced
+// during the run (e.g. a dotfile saved by writing a new file and renaming
+// it), so the change is not copied back.
+func Promote(dir, global string, authPaths []string) ([]string, error) {
 	auth, anc := split(authPaths)
-	return promote(dir, global, ".", auth, anc)
+	var replaced []string
+	err := promote(dir, global, ".", auth, anc, &replaced)
+	sort.Strings(replaced)
+	return replaced, err
 }
 
-func promote(dir, global, rel string, auth, anc map[string]bool) error {
+func promote(dir, global, rel string, auth, anc map[string]bool, replaced *[]string) error {
 	entries, err := os.ReadDir(filepath.Join(dir, rel))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -189,13 +197,14 @@ func promote(dir, global, rel string, auth, anc map[string]bool) error {
 			continue
 		}
 		if anc[child] {
-			if err := promote(dir, global, child, auth, anc); err != nil {
+			if err := promote(dir, global, child, auth, anc, replaced); err != nil {
 				return err
 			}
 			continue
 		}
 		dst := filepath.Join(global, child)
 		if _, err := os.Lstat(dst); err == nil {
+			*replaced = append(*replaced, filepath.ToSlash(child))
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {

@@ -1,0 +1,39 @@
+name = "scw"
+bin  = "scw"
+kind = "env-token"
+
+[[secret]]
+env   = "SCW_ACCESS_KEY"
+label = "Scaleway Access Key ID"
+plain = true
+
+[[secret]]
+env   = "SCW_SECRET_KEY"
+label = "Scaleway Secret Access Key"
+
+[[secret]]
+env   = "SCW_DEFAULT_REGION"
+label = "Scaleway Default Region"
+plain = true
+optional = true
+
+[[secret]]
+env   = "SCW_DEFAULT_ZONE"
+label = "Scaleway Default Zone"
+plain = true
+optional = true
+
+[[secret]]
+env   = "SCW_DEFAULT_PROJECT_ID"
+label = "Scaleway Project ID"
+plain = true
+optional = true
+
+[[secret]]
+env   = "SCW_DEFAULT_ORGANIZATION_ID"
+label = "Scaleway Org ID"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://console.scaleway.com/iam/api-keys"

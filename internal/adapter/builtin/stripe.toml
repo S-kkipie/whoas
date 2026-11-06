@@ -1,0 +1,10 @@
+name = "stripe"
+bin  = "stripe"
+kind = "env-token"
+
+[[secret]]
+env   = "STRIPE_API_KEY"
+label = "Stripe Secret Key"
+
+[login]
+hint = "Create one at https://dashboard.stripe.com/apikeys"

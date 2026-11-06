@@ -2,9 +2,12 @@ package app
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/S-kkipie/whoas/internal/adapter"
+	"github.com/S-kkipie/whoas/internal/envelope"
 	"github.com/S-kkipie/whoas/internal/overlay"
 	"github.com/S-kkipie/whoas/internal/ref"
 )
@@ -14,7 +17,7 @@ func init() { register(newImportCmd) }
 func newImportCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "import <provider> <alias>",
-		Short: "Save the CLI's current global session as provider@alias (no re-login)",
+		Short: "Save the CLI's current session (or the API token in your environment) as provider@alias",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			e, err := loadEnv()
@@ -29,12 +32,26 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := a.CheckConflicts(e.vars()); err != nil {
+				return err
+			}
 			v, err := e.initVault()
 			if err != nil {
 				return err
 			}
 			if v.Exists(r) {
 				return fmt.Errorf("%s already exists (whoas rm %s first)", r, r)
+			}
+			if a.Kind == adapter.KindEnvToken {
+				values, err := secretsFromEnv(a, os.Getenv)
+				if err != nil {
+					return err
+				}
+				account := ""
+				if bin, err := e.realBin(a.Bin); err == nil {
+					account = whoamiWithSecrets(a, bin, values)
+				}
+				return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, envelope.FromSecrets(r.Provider, values).Files, account)
 			}
 			global := a.GlobalDir(e.vars())
 			files, err := overlay.Collect(global, a.Dir.AuthFiles)
@@ -60,7 +77,11 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, account)
+			if err := e.saveLocked(cmd.OutOrStdout(), cmd.ErrOrStderr(), v, r, files, account); err != nil {
+				return err
+			}
+			warnHelperKeys(cmd.ErrOrStderr(), r, a, files)
+			return nil
 		},
 	}
 }

@@ -1,0 +1,15 @@
+name = "src"
+bin  = "src"
+kind = "env-token"
+
+[[secret]]
+env   = "SRC_ENDPOINT"
+label = "Sourcegraph Endpoint"
+plain = true
+
+[[secret]]
+env   = "SRC_ACCESS_TOKEN"
+label = "Sourcegraph Token"
+
+[login]
+hint = "Create one at https://sourcegraph.com/settings/tokens"

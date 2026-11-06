@@ -1,0 +1,19 @@
+name = "spacectl"
+bin  = "spacectl"
+kind = "env-token"
+
+[[secret]]
+env   = "SPACELIFT_API_KEY_ENDPOINT"
+label = "Spacelift Endpoint"
+plain = true
+
+[[secret]]
+env   = "SPACELIFT_API_KEY_ID"
+label = "Spacelift API Key ID"
+
+[[secret]]
+env   = "SPACELIFT_API_KEY_SECRET"
+label = "Spacelift API Secret"
+
+[login]
+hint = "Create an API key in your Spacelift account (Settings → API keys)"

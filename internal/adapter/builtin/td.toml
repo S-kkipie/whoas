@@ -1,0 +1,10 @@
+name = "td"
+bin  = "td"
+kind = "env-token"
+
+[[secret]]
+env   = "TD_API_KEY"
+label = "Treasure Data API Key"
+
+[login]
+hint = "Create one at https://console.treasuredata.com/app/mp/ak"

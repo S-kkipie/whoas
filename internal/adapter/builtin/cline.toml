@@ -1,0 +1,10 @@
+name = "cline"
+bin  = "cline"
+kind = "env-token"
+
+[[secret]]
+env   = "CLINE_API_KEY"
+label = "Cline API Key"
+
+[login]
+hint = "Create one at https://app.cline.bot"

@@ -1,0 +1,22 @@
+name = "octopus"
+bin  = "octopus"
+kind = "env-token"
+
+[[secret]]
+env   = "OCTOPUS_API_KEY"
+label = "Octopus Deploy API Key"
+
+[[secret]]
+env   = "OCTOPUS_URL"
+label = "Octopus Deploy URL"
+plain = true
+optional = true
+
+[[secret]]
+env   = "OCTOPUS_SPACE"
+label = "Octopus Deploy Space"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://octopus.com/docs/octopus-rest-api/how-to-create-an-api-key"

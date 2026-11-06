@@ -1,0 +1,18 @@
+name      = "vercel"
+bin       = "vercel"
+kind      = "dir-overlay"
+unset_env = ["VERCEL_TOKEN"]
+
+[dir]
+global     = "{xdg_data}/com.vercel.cli"
+inject     = { flag = ["--global-config", "{dir}"] }
+# config.json holds currentTeam, so the selected team is per identity too.
+auth_files = ["auth.json", "config.json"]
+
+[login]
+cmd  = ["vercel", "login"]
+hint = "If your browser is signed in to another Vercel account, switch accounts there first."
+
+[whoami]
+cmd  = ["vercel", "whoami", "--format", "json"]
+json = "email"

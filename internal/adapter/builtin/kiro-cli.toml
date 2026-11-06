@@ -1,0 +1,10 @@
+name = "kiro-cli"
+bin  = "kiro-cli"
+kind = "env-token"
+
+[[secret]]
+env   = "KIRO_API_KEY"
+label = "Kiro API Key"
+
+[login]
+hint = "Create one at https://app.kiro.dev"

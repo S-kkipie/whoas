@@ -1,0 +1,15 @@
+name = "databricks"
+bin  = "databricks"
+kind = "env-token"
+
+[[secret]]
+env   = "DATABRICKS_HOST"
+label = "Databricks Host"
+plain = true
+
+[[secret]]
+env   = "DATABRICKS_TOKEN"
+label = "Databricks Token"
+
+[login]
+hint = "See https://docs.databricks.com/dev-tools/auth.html"

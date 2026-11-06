@@ -1,0 +1,10 @@
+name = "supabase"
+bin  = "supabase"
+kind = "env-token"
+
+[[secret]]
+env   = "SUPABASE_ACCESS_TOKEN"
+label = "Supabase Access Token"
+
+[login]
+hint = "Create one at https://supabase.com/dashboard/account/tokens"

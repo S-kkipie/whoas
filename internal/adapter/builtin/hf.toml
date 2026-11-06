@@ -1,0 +1,24 @@
+name = "hf"
+bin  = "hf"
+kind = "env-token"
+# huggingface_hub reads HF_TOKEN first; the legacy name would compete with it.
+unset_env = ["HUGGING_FACE_HUB_TOKEN"]
+
+[[secret]]
+env   = "HF_TOKEN"
+label = "Hugging Face User Access Token"
+
+[[secret]]
+env   = "HF_ENDPOINT"
+label = "Hugging Face Endpoint"
+plain = true
+optional = true
+
+[[secret]]
+env   = "HF_INFERENCE_ENDPOINT"
+label = "Hugging Face API Url"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://huggingface.co/settings/tokens"

@@ -1,0 +1,10 @@
+name = "opencode"
+bin  = "opencode"
+kind = "env-token"
+
+[[secret]]
+env   = "OPENCODE_API_KEY"
+label = "OpenCode API Key"
+
+[login]
+hint = "Create one at https://opencode.ai/auth"

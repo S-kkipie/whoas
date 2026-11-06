@@ -1,0 +1,10 @@
+name = "fossa"
+bin  = "fossa"
+kind = "env-token"
+
+[[secret]]
+env   = "FOSSA_API_KEY"
+label = "FOSSA API Key"
+
+[login]
+hint = "Create one at https://app.fossa.com/account/settings/integrations/api_tokens"

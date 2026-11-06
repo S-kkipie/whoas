@@ -65,8 +65,50 @@ config.
 | `gcloud` | `CLOUDSDK_CONFIG` | `credentials.db`, `access_tokens.db`, `legacy_credentials/`, `configurations/`, `active_config`, `application_default_credentials.json` | `CLOUDSDK_CORE_ACCOUNT`, `CLOUDSDK_AUTH_ACCESS_TOKEN_FILE`, `CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE` |
 | `codex` | `CODEX_HOME` | `auth.json` | — |
 | `neonctl` | `--config-dir` flag | `credentials.json` | `NEON_API_KEY` |
+| `vercel` | `--global-config` flag | `auth.json`, `config.json` (keeps the selected team per identity) | `VERCEL_TOKEN` |
+| `wrangler` | `XDG_CONFIG_HOME` (overlay of `~/.config`) | `.wrangler/config/` (every wrangler auth profile) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` |
+| `railway` ⚗️ | `HOME` (overlay of `~`) | `.railway/config.json` | `RAILWAY_TOKEN`, `RAILWAY_API_TOKEN` |
+| `docker` | `DOCKER_CONFIG` | `config.json` (inline `auths`; see [docker](#docker)) | — |
 
-More are on the [roadmap](#roadmap), and you can [add your own](#adding-a-cli).
+⚗️ **experimental:** works, with a known gap — commands started by `railway run`
+also see the overlay `HOME`. The banner and `whoas providers` mark it.
+
+**Root overlays** (`railway`: all of `~`; `wrangler`: all of `~/.config`): tools
+that save a dotfile by writing a new file and renaming it — `git config --global`,
+some shells' history — lose that change inside a root overlay; whoas warns when
+it happens (`whoas: warning: railway@work: .gitconfig was replaced during the run; …`).
+
+**wrangler:** a legacy `~/.wrangler` directory wins over `$XDG_CONFIG_HOME` in
+wrangler and would bypass the overlay, so whoas refuses to add or run wrangler
+identities while it exists. Move it once: `mv ~/.wrangler ~/.config/.wrangler`.
+On macOS wrangler keeps its session under `~/Library/Preferences/.wrangler`, so
+`whoas import wrangler` may find nothing there (`add` and runs still isolate).
+
+### API-token CLIs
+
+CLIs that authenticate with an API token instead of a login get an
+**`env-token`** adapter: whoas stores the token in the vault and injects it as an
+env var for that one process. Built in: `supabase`, `terraform` (HCP Terraform),
+`stripe`, `openai`, `netlify`, `fly`/`flyctl`, `glab`, `doppler`, `snyk`,
+`sentry-cli`, `pulumi`, `hcloud`, `vultr-cli`, `linode-cli`, `twilio`,
+`upstash`, `vault`, `gemini`, `grok`, `cargo`, `brew` and 42 more (64 in all) —
+`whoas providers --all` lists them all.
+
+```console
+$ whoas add stripe work            # asks for the key; typing is not echoed
+hint: Create one at https://dashboard.stripe.com/apikeys
+Stripe Secret Key (STRIPE_API_KEY):
+saved stripe@work
+$ export STRIPE_API_KEY=sk_test_…  # or take the one already in your shell
+$ whoas import stripe personal
+$ printf '%s\n' "$TOKEN" | whoas add supabase ci --stdin    # scripts / CI
+```
+
+Isolation holds when the CLI prefers that env var over its own stored login (and
+over other variables it reads). Check each CLI once with a command that prints
+the account (`whoas <cli>@work <whoami-like command>`) before relying on it.
+
+You can [add your own](#adding-a-cli) adapter for any CLI.
 
 | Platform | Status |
 |---|---|
@@ -75,7 +117,7 @@ More are on the [roadmap](#roadmap), and you can [add your own](#adding-a-cli).
 | macOS | ✅ Keychain |
 | Native Windows | ❌ not yet — the Windows build only ships the keystore helper WSL uses |
 
-> **Status:** early (M1). The core is complete and heavily tested; expect
+> **Status:** early (M2). The core is complete and heavily tested; expect
 > rough edges and breaking changes before 1.0.
 
 ## Install
@@ -278,8 +320,8 @@ drops it, `whoas unlock` loads it.
 | Command | What it does |
 |---|---|
 | `whoas <provider>[@alias] [args…]` | Run the CLI as an identity (args passed verbatim) |
-| `whoas add <provider> <alias>` | Log in through the CLI and save the session |
-| `whoas import <provider> <alias>` | Save the CLI's current global session, no re-login |
+| `whoas add <provider> <alias> [--stdin]` | Log in through the CLI (or enter its API token) and save it |
+| `whoas import <provider> <alias>` | Save the CLI's current session, or the API token in your environment |
 | `whoas ls [provider]` | List identities, their account and live processes |
 | `whoas rm <provider>@<alias>` | Delete an identity (refused while in use) |
 | `whoas which <provider> [-p profile]` | Show which identity would be used, and why |
@@ -289,7 +331,7 @@ drops it, `whoas unlock` loads it.
 | `whoas shims install\|uninstall\|ls` | Manage shims (only ever touches whoas's own links) |
 | `whoas agent` / `unlock` / `lock` | Key agent control |
 | `whoas doctor` | Check setup; recover overlays and captures left by crashed runs |
-| `whoas providers` | List adapters and whether their CLI is installed |
+| `whoas providers [--all]` | List the adapters of installed CLIs (`--all`: every adapter) |
 | `whoas completion <shell>` | Shell completion script |
 
 ### Exit codes and signals
@@ -333,13 +375,60 @@ cmd  = ["mycli", "whoami", "--json"]
 json = "email"                       # optional gjson path into stdout
 ```
 
+Optional `[dir]` keys: `helper_keys = ["credsStore"]` lists top-level JSON keys of an
+auth file that delegate credentials to external helpers (whoas warns about them);
+`conflicts = ["{home}/.mycli"]` lists paths that make the CLI ignore the injected
+dir (whoas refuses to add or run while one exists).
+`experimental = true` (top level) marks an adapter with known gaps.
+
+**A whole root as the overlay.** If the CLI only honours `$HOME` or `$XDG_*`, set
+`global` to exactly `{home}`, `{xdg_config}` or `{xdg_data}` and inject the
+matching variable — `HOME`, `XDG_CONFIG_HOME` or `XDG_DATA_HOME` — as `"{dir}"`.
+Changes made by renaming a new file over an existing entry stay in the overlay
+and are lost (whoas warns), so prefer a sub-directory overlay when the CLI allows it.
+
+**API-token CLIs** use `kind = "env-token"` and declare their env vars instead of a `[dir]`:
+
+```toml
+name = "mycli"
+bin  = "mycli"
+kind = "env-token"
+
+[[secret]]
+env   = "MYCLI_TOKEN"
+label = "MyCLI API Token"            # shown in the hidden prompt
+
+[[secret]]
+env      = "MYCLI_HOST"
+label    = "MyCLI Host"
+plain    = true                      # not secret: prompt with echo
+optional = true
+
+[login]
+hint = "Create one at https://example.com/tokens"   # optional; no login cmd
+```
+
 Rules, enforced on load: unknown keys are errors; `bin` is a bare command name;
 every `inject.env` value contains `{dir}`; `global` starts with `{home}/`,
-`{xdg_config}/` or `{xdg_data}/`; `auth_files` are clean relative paths; no two
-adapters share a `bin`. A user adapter with the same `name` replaces a built-in.
+`{xdg_config}/` or `{xdg_data}/` (or is exactly one of those roots, with its
+variable injected); `auth_files` are clean relative paths; an `env-token` adapter
+has at least one non-optional `[[secret]]` (never `HOME` or `XDG_*_HOME`) and no
+`[dir]` or `login.cmd`; no two adapters share a `bin`. A user adapter with the
+same `name` or `bin` replaces that built-in.
 
 > Adapters are data, not scripts — but an adapter decides which binary runs, so
 > only install adapters you trust. Project files can never declare one.
+
+### docker
+
+whoas isolates the credentials docker keeps **inline** in `config.json`
+(`auths`). Registries listed under `credsStore` / `credHelpers` delegate to an
+external helper (a keychain, `gcloud`, `ecr-login`…) whose store is global;
+whoas warns when an identity contains them. Anything docker writes during a run
+is captured, so you can add a registry to an identity with
+`whoas docker@work login ghcr.io`. Because `config.json` is per identity, it also
+carries docker's `currentContext`, proxies and plugin settings per identity (like
+vercel's selected team).
 
 ## Security
 
@@ -464,14 +553,15 @@ applies. Otherwise it passes straight through.
 
 ## Roadmap
 
-- **M2:** `vercel`, `wrangler`, `railway`, `docker`, plus an `env-token` adapter kind for
-  token-based CLIs (`supabase`, `terraform`).
+- ✅ **M2:** `vercel`, `wrangler`, `railway`, `docker`, and `env-token` adapters for
+  API-token CLIs.
 - **M3:** Claude Code + per-MCP-server accounts (compose one `.credentials.json`
   from several identities).
 - **Later:** Claude Code on macOS (Keychain), native Windows, git identities
   (SSH keys, commit email), a local audit log.
 
-The design doc is [`docs/superpowers/specs/2026-11-05-whoas-design.md`](docs/superpowers/specs/2026-11-05-whoas-design.md).
+Design docs: [`whoas`](docs/superpowers/specs/2026-11-05-whoas-design.md) and
+[M2](docs/superpowers/specs/2026-11-06-whoas-m2-design.md).
 
 ## Development
 
@@ -498,7 +588,8 @@ Built on [age](https://github.com/FiloSottile/age), [cobra](https://github.com/s
 and [testscript](https://github.com/rogpeppe/go-internal). The ideas come from
 [direnv](https://direnv.net) (trust), [mise](https://mise.jdx.dev) (shims),
 [aws-vault](https://github.com/99designs/aws-vault) (exec + keyring) and
-[1Password Shell Plugins](https://github.com/1Password/shell-plugins).
+[1Password Shell Plugins](https://github.com/1Password/shell-plugins), whose
+catalogue was the reference for the env-var names of the API-token adapters.
 
 ## License
 

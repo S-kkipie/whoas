@@ -1,0 +1,20 @@
+name = "zcli"
+bin  = "zcli"
+kind = "env-token"
+
+[[secret]]
+env   = "ZENDESK_SUBDOMAIN"
+label = "Zendesk Subdomain"
+plain = true
+
+[[secret]]
+env   = "ZENDESK_EMAIL"
+label = "Zendesk Email"
+plain = true
+
+[[secret]]
+env   = "ZENDESK_API_TOKEN"
+label = "Zendesk Token"
+
+[login]
+hint = "Create one at https://developer.zendesk.com/api-reference/introduction/security-and-auth/#api-token"

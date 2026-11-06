@@ -1,0 +1,69 @@
+# Root overlays: an adapter whose overlay is all of $HOME (railway-style).
+env FAKECLI_LOGIN_AS=global
+exec fakehome login
+snapshot $HOME/.fakecli/auth.json g
+
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakehome work
+stdout 'saved fakehome@work \(account=work\)'
+unchanged $HOME/.fakecli/auth.json g
+
+exec whoas import fakehome main
+stdout 'saved fakehome@main \(account=global\)'
+
+# the CLI sees the identity through the overlay HOME; refreshes are sealed
+exec whoas fakehome@work whoami
+stdout '^account=work$'
+exec whoas fakehome@work refresh token
+stdout '^token=tok-work-1$'
+exec whoas fakehome@work token
+stdout '^token=tok-work-1$'
+
+# new non-auth files the CLI creates under ~ are promoted to the real home
+exec whoas fakehome@work setting theme dark
+exists $HOME/.fakecli/settings/theme.txt
+
+# experimental adapters are marked in the banner
+env WHOAS_BANNER=always
+exec whoas fakehome@work whoami
+stderr '^whoas: fakehome@work \(account=work\) \[experimental\]$'
+env WHOAS_BANNER=
+
+# concurrent runs of the same identity share one overlay, removed afterwards
+exec whoas fakehome@work sleep 3000 whoami &a&
+wait-exists $WORK/run/id/fakehome/work
+exec whoas fakehome@work whoami
+stdout '^account=work$'
+exists $WORK/run/id/fakehome/work
+wait
+! exists $WORK/run/id/fakehome/work
+! exists $WORK/run/id/fakehome/work.state.json
+
+# the real home session was never touched
+unchanged $HOME/.fakecli/auth.json g
+exec fakehome whoami
+stdout '^account=global$'
+
+# a conflicting legacy dir (wrangler's ~/.wrangler) blocks add, import and
+# every run before anything is touched; runs exit 125, add/import exit 1 like
+# their other errors
+mkdir $HOME/.legacy
+expect-exit 125 whoas fakehome@work whoami
+stderr '^whoas: fakehome: .*home/\.legacy exists and fakehome uses it instead of the isolated directory; move it \(see the adapter''s hint\) to use identities$'
+! stdout 'account='
+expect-exit 1 whoas add fakehome blocked
+stderr 'home/\.legacy exists'
+expect-exit 1 whoas import fakehome blocked
+stderr 'home/\.legacy exists'
+! exists $WORK/data/vault/fakehome/blocked.age
+exec whoas profile set legacy fakehome@work
+exec whoas shims install
+expect-exit 125 whoas run -p legacy -- fakehome whoami
+stderr 'home/\.legacy exists'
+! stdout 'account='
+unchanged $HOME/.fakecli/auth.json g
+rm $HOME/.legacy
+exec whoas run -p legacy -- fakehome whoami
+stdout '^account=work$'
+exec whoas fakehome@work whoami
+stdout '^account=work$'

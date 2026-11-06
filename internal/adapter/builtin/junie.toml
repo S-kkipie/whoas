@@ -1,0 +1,10 @@
+name = "junie"
+bin  = "junie"
+kind = "env-token"
+
+[[secret]]
+env   = "JUNIE_API_KEY"
+label = "JetBrains Junie API Key"
+
+[login]
+hint = "Create one at https://junie.jetbrains.com/cli"

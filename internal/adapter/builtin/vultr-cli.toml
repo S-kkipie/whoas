@@ -1,0 +1,10 @@
+name = "vultr-cli"
+bin  = "vultr-cli"
+kind = "env-token"
+
+[[secret]]
+env   = "VULTR_API_KEY"
+label = "Vultr API Key"
+
+[login]
+hint = "Create one at https://my.vultr.com/settings/#settingsapi"

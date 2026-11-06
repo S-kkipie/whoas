@@ -1,0 +1,10 @@
+name = "localstack"
+bin  = "localstack"
+kind = "env-token"
+
+[[secret]]
+env   = "LOCALSTACK_AUTH_TOKEN"
+label = "LocalStack Auth Token"
+
+[login]
+hint = "Create one at https://app.localstack.cloud/workspace/auth-token"

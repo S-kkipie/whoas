@@ -1,0 +1,10 @@
+name = "cargo"
+bin  = "cargo"
+kind = "env-token"
+
+[[secret]]
+env   = "CARGO_REGISTRY_TOKEN"
+label = "Cargo API Token"
+
+[login]
+hint = "Create one at https://crates.io/settings/tokens"

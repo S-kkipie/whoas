@@ -305,3 +305,24 @@ func TestUnsetEnvRemovedFromChild(t *testing.T) {
 	_, out := run(t, f.plan)
 	require.Equal(t, "token=unset\n", out)
 }
+
+// A mirrored entry replaced by rename stays as it was globally; whoas warns.
+func TestRunWarnsAboutReplacedEntries(t *testing.T) {
+	f := newFixture(t, `printf edited > "$FAKE_DIR/shared.txt.lock" && mv "$FAKE_DIR/shared.txt.lock" "$FAKE_DIR/shared.txt"`)
+	var stderr bytes.Buffer
+	f.plan.Stderr = &stderr
+	res, _ := run(t, f.plan)
+	require.Zero(t, res.Code)
+	require.Equal(t, "whoas: warning: fake@work: shared.txt was replaced during the run; the change was not copied to "+filepath.Join(f.global, "shared.txt")+"\n", stderr.String())
+	g, _ := os.ReadFile(filepath.Join(f.global, "shared.txt"))
+	require.Equal(t, "shared", string(g))
+
+	// writing through the mirrored symlink changes the global file: no warning
+	f = newFixture(t, `printf edited > "$FAKE_DIR/shared.txt"`)
+	stderr.Reset()
+	f.plan.Stderr = &stderr
+	run(t, f.plan)
+	require.Empty(t, stderr.String())
+	g, _ = os.ReadFile(filepath.Join(f.global, "shared.txt"))
+	require.Equal(t, "edited", string(g))
+}

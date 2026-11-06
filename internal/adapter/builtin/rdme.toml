@@ -1,0 +1,22 @@
+name = "rdme"
+bin  = "rdme"
+kind = "env-token"
+
+[[secret]]
+env   = "RDME_API_KEY"
+label = "ReadMe API Key"
+
+[[secret]]
+env   = "RDME_EMAIL"
+label = "ReadMe Username"
+plain = true
+optional = true
+
+[[secret]]
+env   = "RDME_PROJECT"
+label = "ReadMe Website"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://docs.readme.com/main/reference/intro/authentication"

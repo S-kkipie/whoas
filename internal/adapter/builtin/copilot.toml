@@ -1,0 +1,10 @@
+name = "copilot"
+bin  = "copilot"
+kind = "env-token"
+
+[[secret]]
+env   = "COPILOT_GITHUB_TOKEN"
+label = "GitHub Copilot Auth Token"
+
+[login]
+hint = "Create one at https://github.com/settings/personal-access-tokens/new"

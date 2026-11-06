@@ -1,0 +1,15 @@
+name = "upstash"
+bin  = "upstash"
+kind = "env-token"
+
+[[secret]]
+env   = "UPSTASH_API_KEY"
+label = "Upstash API Key"
+
+[[secret]]
+env   = "UPSTASH_EMAIL"
+label = "Upstash Email"
+plain = true
+
+[login]
+hint = "Create one at https://console.upstash.com/account/api"

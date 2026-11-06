@@ -32,9 +32,10 @@ func newShimsCmd() *cobra.Command {
 					return err
 				}
 				var installed []string
+				ix := e.binIndex()
 				for _, name := range e.registry.Names() {
 					a, _ := e.registry.Get(name)
-					if _, err := e.realBin(a.Bin); err != nil {
+					if _, err := ix.Find(a.Bin); err != nil {
 						continue // CLI not installed
 					}
 					link := filepath.Join(dir, a.Bin)

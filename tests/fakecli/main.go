@@ -14,6 +14,8 @@
 //	sleep MS       sleep MS milliseconds
 //	trap           wait for SIGTERM or SIGINT, print "trapped=TERM|INT", exit 42
 //	exit N         exit with code N
+//	envkey NAME    print "NAME=set" or "NAME=unset" (never the value)
+//	tokwho         print "account=<part of $FAKETOK_KEY before '-'>"; exit 3 without it
 package main
 
 import (
@@ -23,6 +25,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -148,6 +151,24 @@ func main() {
 				fmt.Println("trapped=TERM")
 			}
 			os.Exit(42)
+		case "envkey":
+			if len(args) < 1 {
+				fail("envkey needs NAME")
+			}
+			state := "unset"
+			if os.Getenv(args[0]) != "" {
+				state = "set"
+			}
+			fmt.Printf("%s=%s\n", args[0], state)
+			args = args[1:]
+		case "tokwho":
+			key := os.Getenv("FAKETOK_KEY")
+			if key == "" {
+				fmt.Fprintln(os.Stderr, "fakecli: no key")
+				os.Exit(3)
+			}
+			account, _, _ := strings.Cut(key, "-")
+			fmt.Printf("account=%s\n", account)
 		case "exit":
 			var n int
 			n, _ = intArg(args, op)

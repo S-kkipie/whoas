@@ -1,0 +1,15 @@
+name = "descope"
+bin  = "descope"
+kind = "env-token"
+
+[[secret]]
+env   = "DESCOPE_PROJECT_ID"
+label = "Descope Project ID"
+plain = true
+
+[[secret]]
+env   = "DESCOPE_MANAGEMENT_KEY"
+label = "Descope Management Key"
+
+[login]
+hint = "Create one at https://app.descope.com/settings/company/managementkeys"

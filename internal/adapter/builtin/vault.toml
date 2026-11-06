@@ -1,0 +1,22 @@
+name = "vault"
+bin  = "vault"
+kind = "env-token"
+
+[[secret]]
+env   = "VAULT_TOKEN"
+label = "HashiCorp Vault Token"
+
+[[secret]]
+env   = "VAULT_ADDR"
+label = "HashiCorp Vault Address"
+plain = true
+optional = true
+
+[[secret]]
+env   = "VAULT_NAMESPACE"
+label = "HashiCorp Vault Namespace"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://developer.hashicorp.com/vault/docs/concepts/tokens"

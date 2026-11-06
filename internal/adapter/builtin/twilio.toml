@@ -1,0 +1,19 @@
+name = "twilio"
+bin  = "twilio"
+kind = "env-token"
+
+[[secret]]
+env   = "TWILIO_ACCOUNT_SID"
+label = "Twilio Account SID"
+plain = true
+
+[[secret]]
+env   = "TWILIO_API_KEY"
+label = "Twilio API Key"
+
+[[secret]]
+env   = "TWILIO_API_SECRET"
+label = "Twilio API Secret"
+
+[login]
+hint = "Create one at https://www.twilio.com/console/project/api-keys"
