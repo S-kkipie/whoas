@@ -462,7 +462,10 @@ hint = "Create one at https://eu.posthog.com/settings/user-api-keys with the MCP
 An agent with a shell can use any identity its profile grants, by starting
 `whoas mcp proxy` itself (as it can run `whoas <cli>@alias`). A repository's
 `.mcp.json` can only name an alias, never a key, and agents ask before
-trusting it. MCP servers that only support OAuth are not supported yet.
+trusting it. MCP servers that only support OAuth (Notion, Figma, Slack…) are out
+of scope: keep using the agent's own OAuth login for them (one account per
+server). CLIs that log in with OAuth (`gh`, `gcloud`, `vercel`, `wrangler`,
+`codex`…) are fully supported.
 
 ## How it works
 
@@ -790,7 +793,6 @@ applies. Otherwise it passes straight through.
   API-token CLIs.
 - ✅ **M3:** Claude Code accounts (`claude setup-token`) and per-project API keys
   for remote MCP servers in any agent (`whoas mcp proxy`; PostHog and Linear built in).
-- **M4:** MCP servers that only support OAuth (OAuth inside the proxy).
 - **Later:** Claude accounts with Remote Control and claude.ai connectors, native
   Windows, git identities (SSH keys, commit email), a local audit log.
 
