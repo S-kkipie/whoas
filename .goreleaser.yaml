@@ -51,3 +51,27 @@ release:
   github:
     owner: S-kkipie
     name: whoas
+
+# Homebrew: the cask in github.com/S-kkipie/homebrew-tap (Casks/whoas.rb).
+# GoReleaser v2.10+ publishes prebuilt binaries as casks (brews is deprecated);
+# casks install on macOS and on Linux (brew install S-kkipie/tap/whoas).
+# Needs the HOMEBREW_TAP_GITHUB_TOKEN secret (see CONTRIBUTING.md); without it
+# the cask is still generated in dist/ but not pushed, and the release goes on.
+homebrew_casks:
+  - name: whoas
+    homepage: https://github.com/S-kkipie/whoas
+    description: Run any CLI as the account you meant to use
+    license: MIT
+    repository:
+      owner: S-kkipie
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_msg_template: "whoas {{ .Tag }}"
+    skip_upload: '{{ if isEnvSet "HOMEBREW_TAP_GITHUB_TOKEN" }}auto{{ else }}true{{ end }}'
+    hooks:
+      post:
+        # the binaries are not notarized: let macOS run them
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/whoas"]
+          end

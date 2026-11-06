@@ -94,5 +94,14 @@ with what you know.
 Push a `v*` tag with hand-written notes in `.github/release-notes/<tag>.md`;
 [`release.yml`](.github/workflows/release.yml) runs the tests and GoReleaser
 ([`.goreleaser.yaml`](.goreleaser.yaml)), which builds the archives,
-`checksums.txt` and the changelog. Dry run:
-`goreleaser release --snapshot --clean --skip=publish`.
+`checksums.txt` and the changelog, then pushes the Homebrew cask
+(`Casks/whoas.rb`) to [S-kkipie/homebrew-tap](https://github.com/S-kkipie/homebrew-tap).
+Dry run: `goreleaser release --snapshot --clean --skip=publish` (the cask lands in
+`dist/homebrew/`).
+
+The tap push needs a repository secret, `HOMEBREW_TAP_GITHUB_TOKEN`: a
+[fine-grained personal access token](https://github.com/settings/personal-access-tokens/new)
+with access to **only** `S-kkipie/homebrew-tap` and the **Contents: Read and write**
+permission, stored under Settings → Secrets and variables → Actions. Without it the
+release still succeeds and the cask step is skipped (`brew.skip_upload is set`);
+the tap then stays on the previous version until it is updated by hand.

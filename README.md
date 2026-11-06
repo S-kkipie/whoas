@@ -149,6 +149,12 @@ do it by hand? Every release has `whoas_<version>_<os>_<arch>.tar.gz` archives
 (`.zip` for Windows) and a `checksums.txt` on the
 [Releases](https://github.com/S-kkipie/whoas/releases) page.
 
+**Homebrew** (macOS, Linux):
+
+```sh
+brew install S-kkipie/tap/whoas
+```
+
 <details>
 <summary><b>With Go</b> (≥ 1.25)</summary>
 
@@ -173,8 +179,8 @@ go build -o ~/.local/bin/whoas ./cmd/whoas
 
 On WSL whoas keeps its master key in Windows Credential Manager through the
 Windows build, `whoas.exe`, which must sit next to the Linux binary **before your
-first `whoas add`**. The install script already puts it there. With any other
-method, unzip `whoas.exe` from the release's `whoas_<version>_windows_amd64.zip`
+first `whoas add`**. The install script already puts it there. With Homebrew or
+any other method, unzip `whoas.exe` from the release's `whoas_<version>_windows_amd64.zip`
 next to `whoas`, or build it:
 
 ```sh
