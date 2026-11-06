@@ -1,0 +1,81 @@
+# whoas mcp proxy: the identity chosen for the agent's project fills the API
+# key; keys never appear in whoas's output.
+exec fakemcp $WHOAS_CONFIG_DIR/adapters/fakemcp.toml &srv&
+wait-exists $WHOAS_CONFIG_DIR/adapters/fakemcp.toml
+
+stdin key-acme
+exec whoas add mcp-fake acme --stdin
+stdin key-beta
+exec whoas add mcp-fake beta --stdin
+exec whoas profile set work mcp-fake@acme
+exec whoas profile set home mcp-fake@beta
+
+# no identity resolves: exit 2
+expect-exit 2 whoas mcp proxy fake
+stderr '^whoas: mcp proxy fake: no identity for mcp-fake here \(no profile\); add one with whoas add mcp-fake <alias>$'
+
+# two projects, two keys: the agent's WHOAS_CONTEXT_DIR decides
+cd repo-a
+exec whoas trust
+cd ../repo-b
+exec whoas trust
+cd $WORK
+env WHOAS_CONTEXT_DIR=$WORK/repo-a
+exec mcpcall whoas mcp proxy fake
+stdout '^key=acme-mcp-secret$'
+! stderr 'mcp-secret'
+exec whoas which mcp-fake
+stdout '^mcp-fake@acme  via project .*repo-a/\.whoas\.yaml \(profile work\)$'
+env WHOAS_CONTEXT_DIR=$WORK/repo-b
+exec mcpcall whoas mcp proxy fake
+stdout '^key=beta-mcp-secret$'
+! stderr 'mcp-secret'
+
+# an explicit alias wins
+exec mcpcall whoas mcp proxy mcp-fake@acme
+stdout '^key=acme-mcp-secret$'
+
+# without WHOAS_CONTEXT_DIR the working directory decides, and WHOAS_PROFILE beats it
+env WHOAS_CONTEXT_DIR=
+cd repo-a
+exec mcpcall whoas mcp proxy fake
+stdout '^key=acme-mcp-secret$'
+env WHOAS_PROFILE=home
+exec mcpcall whoas mcp proxy fake
+stdout '^key=beta-mcp-secret$'
+env WHOAS_PROFILE=
+cd $WORK
+
+# the remote rejects the key: the proxy fails (exit 1) and says why, without the key
+stdin key-revoked
+exec whoas add mcp-fake old --stdin
+! exec mcpcall whoas mcp proxy mcp-fake@old
+stderr 'whoas: mcp proxy mcp-fake@old: http://127.0.0.1:[0-9]+/mcp: .*Unauthorized'
+! stderr 'revoked-mcp-secret'
+
+# the vault needs a terminal to unlock: exit 3, never a prompt
+env SAVED_KEY=$WHOAS_MASTER_KEY
+env WHOAS_MASTER_KEY=
+env WHOAS_KEYSTORE=passphrase
+cp sealed-key $WORK/data/master.age
+expect-exit 3 whoas mcp proxy mcp-fake@acme
+stderr '^whoas: mcp proxy mcp-fake@acme: the vault is locked and its key needs a terminal; run whoas unlock$'
+env WHOAS_KEYSTORE=
+env WHOAS_MASTER_KEY=$SAVED_KEY
+rm $WORK/data/master.age
+
+kill -INT srv
+wait
+
+-- key-acme --
+acme-mcp-secret
+-- key-beta --
+beta-mcp-secret
+-- key-revoked --
+revoked-mcp-secret
+-- repo-a/.whoas.yaml --
+profile: work
+-- repo-b/.whoas.yaml --
+mcp-fake: beta
+-- sealed-key --
+not really an age file

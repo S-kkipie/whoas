@@ -1,0 +1,42 @@
+# A Claude-like env-token CLI: login.cmd helps obtain the token before the
+# prompt, and runs inject it with ANTHROPIC_API_KEY removed.
+
+# with --stdin, login.cmd does not run
+stdin token-max
+exec whoas add fakeclaude max --stdin
+stdout 'saved fakeclaude@max$'
+stderr 'hint: fake claude hint'
+! exists $HOME/setup-token-ran
+! stdout 'oat01-secret'
+! stderr 'oat01-secret'
+
+# without --stdin it runs first, without the variables that would outrank the
+# token and with WHOAS_CONTEXT_DIR; its failure stops add before any prompt
+env ANTHROPIC_API_KEY=sk-ant-api03-shell
+env FAKECLI_SETUP_EXIT=1
+! exec whoas add fakeclaude pro
+stdout '^ANTHROPIC_API_KEY=unset$'
+stdout '^WHOAS_CONTEXT_DIR=/'
+stdout '^setup-token ran$'
+stderr 'fakeclaude envkey ANTHROPIC_API_KEY env WHOAS_CONTEXT_DIR setup-token failed: exit status 1; nothing saved'
+exists $HOME/setup-token-ran
+! exists $WORK/data/vault/fakeclaude/pro.age
+env FAKECLI_SETUP_EXIT=
+
+# the run injects the token, removes ANTHROPIC_API_KEY, sets WHOAS_CONTEXT_DIR
+exec whoas fakeclaude@max prefix CLAUDE_CODE_OAUTH_TOKEN envkey ANTHROPIC_API_KEY env WHOAS_CONTEXT_DIR
+stdout '^CLAUDE_CODE_OAUTH_TOKEN=max$'
+stdout '^ANTHROPIC_API_KEY=unset$'
+stdout '^WHOAS_CONTEXT_DIR=/'
+! stdout 'oat01-secret'
+! stderr 'oat01-secret'
+env ANTHROPIC_API_KEY=
+
+# no identity for it here: the shim passes through to the normal login
+exec whoas shims install
+env PATH=$WORK/data/shims:$PATH
+exec fakeclaude prefix CLAUDE_CODE_OAUTH_TOKEN
+stdout '^CLAUDE_CODE_OAUTH_TOKEN=unset$'
+
+-- token-max --
+max-sk-ant-oat01-secret
