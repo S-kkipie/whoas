@@ -448,7 +448,7 @@ func TestBridgeClosesBothSides(t *testing.T) {
 // A call the remote cannot take gets an error response (secrets redacted);
 // a failed initialize also ends the session.
 func TestBridgeFailedCalls(t *testing.T) {
-	secrets := secretsOf(map[string]string{"Authorization": "Bearer secret-token-1"})
+	secrets := secretList([]string{"secret-token-1"})
 	fail := func(m jsonrpc.Message) error {
 		if r, ok := m.(*jsonrpc.Request); ok {
 			return errors.New(`sending "` + r.Method + `": Bad Gateway for Bearer secret-token-1`)
@@ -460,7 +460,7 @@ func TestBridgeFailedCalls(t *testing.T) {
 		resp := msg.(*jsonrpc.Response)
 		want, _ := jsonrpc.MakeID(float64(id))
 		require.Equal(t, want, resp.ID)
-		require.ErrorContains(t, resp.Error, "Bad Gateway for [redacted]")
+		require.ErrorContains(t, resp.Error, "Bad Gateway for Bearer [redacted]")
 		require.NotContains(t, resp.Error.Error(), "secret-token-1")
 	}
 
@@ -501,11 +501,105 @@ func TestBridgeFailedCalls(t *testing.T) {
 		require.NoError(t, <-done)
 		check(t, local.messages()[0], 9)
 	})
+
+	// A JSON-RPC error from the remote (an HTTP error whose body is a
+	// JSON-RPC response) keeps its code; its message and data are redacted,
+	// whatever JSON the data is.
+	for name, tc := range map[string]struct{ data, want string }{
+		"string data":  {`"key secret-token-1 rejected"`, `"key [redacted] rejected"`},
+		"object data":  {`{"got":"Bearer secret-token-1","client":"whoas","n":12345678901234567890}`, `{"client":"whoas","got":"Bearer [redacted]","n":12345678901234567890}`},
+		"escaped data": {`{"got":"secret\u002dtoken-1"}`, `{"got":"[redacted]"}`},
+		"number data":  {`12345678901234567890`, `12345678901234567890`},
+		"no data":      {``, ``},
+	} {
+		t.Run("remote error, "+name, func(t *testing.T) {
+			local, remote := newFakeConn(), newFakeConn()
+			remote.writeErr = func(m jsonrpc.Message) error {
+				rerr := &jsonrpc.Error{Code: -32001, Message: "key secret-token-1 is not valid for client whoas", Data: json.RawMessage(tc.data)}
+				return fmt.Errorf(`sending "tools/call": %w: %w: Unauthorized`, rerr, &jsonrpc.Error{Code: -32005, Message: "rejected by transport"})
+			}
+			local.in <- call(10, "tools/call")
+			done := make(chan error, 1)
+			go func() { done <- bridge(context.Background(), local, remote, &session{}, secrets) }()
+			require.Eventually(t, func() bool { return len(local.messages()) == 1 }, 5*time.Second, 5*time.Millisecond)
+			close(local.in)
+			require.NoError(t, <-done)
+			resp := local.messages()[0].(*jsonrpc.Response)
+			require.Equal(t, int64(-32001), resp.Error.(*jsonrpc.Error).Code)
+			werr := resp.Error.(*jsonrpc.Error)
+			require.Equal(t, "key [redacted] is not valid for client whoas", werr.Message, "only the secret value is redacted")
+			require.Equal(t, tc.want, string(werr.Data))
+			wire, err := jsonrpc.EncodeMessage(resp)
+			require.NoError(t, err, "the redacted response still encodes")
+			require.NotContains(t, string(wire), "secret-token-1")
+		})
+	}
 }
 
 func TestRedact(t *testing.T) {
-	s := secretsOf(map[string]string{"Authorization": "Bearer phx_abcdef123456", "X-Org": "42"})
-	require.Equal(t, "got [redacted] and [redacted] and [redacted]", redact("got Bearer phx_abcdef123456 and phx_abcdef123456 and 42", s))
+	s := secretList([]string{"phx_abc", "", "phx_abcdef123456", "42", "phx_abcdef123456"})
+	require.Equal(t, []string{"phx_abcdef123456", "phx_abc", "42"}, s, "each non-empty value once, longest first")
+	require.Equal(t, "got Bearer [redacted] and [redacted]=[redacted] and [redacted]", redact("got Bearer phx_abcdef123456 and phx_abc=phx_abcdef123456 and 42", s))
+	require.Equal(t, "X-Client: whoas", redact("X-Client: whoas", s), "literal header text is not a secret")
 	require.NoError(t, redactErr(nil, nil))
-	require.EqualError(t, redactErr(errors.New("bad Bearer phx_abcdef123456"), map[string]string{"Authorization": "Bearer phx_abcdef123456"}), "bad [redacted]")
+	require.EqualError(t, redactErr(errors.New("bad Bearer phx_abcdef123456"), s), "bad Bearer [redacted]")
+
+	// error data: escaped secrets are found, and the result is always valid JSON
+	q := secretList([]string{`k"&<1`, "4242"})
+	for in, want := range map[string]string{
+		`{"a":"k\"&<1","b":"\u0026"}`: `{"a":"[redacted]","b":"&"}`,
+		`{"n":4242,"m":1}`:            `"{\"m\":1,\"n\":[redacted]}"`,
+		`[true,null,"x"]`:             `[true,null,"x"]`,
+	} {
+		got := redactData(json.RawMessage(in), q)
+		require.Equal(t, want, string(got), in)
+		require.True(t, json.Valid(got), in)
+	}
+	require.Equal(t, `{"a":"k"}`, string(redactData(json.RawMessage(`{"a":"k"}`), nil)), "no secrets: unchanged")
+}
+
+// A remote that echoes the request's headers in a JSON-RPC error (status
+// 401, the message and the data) never gets the key to the agent, and the
+// literal header text around it survives.
+func TestRunRedactsRemoteErrors(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	ts, _ := testServer(t, "k1-secret-value", &mcp.StreamableHTTPOptions{Stateless: true}, nil)
+	target, _ := url.Parse(ts.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			var m struct {
+				ID     json.RawMessage `json:"id"`
+				Method string          `json:"method"`
+			}
+			_ = json.Unmarshal(body, &m)
+			if m.Method == "tools/call" {
+				echo := "X-Client=" + r.Header.Get("X-Client") + " Authorization=" + r.Header.Get("Authorization")
+				data, _ := json.Marshal(map[string]string{"headers": echo})
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":%q,"data":%s}}`, m.ID, "rejected "+echo, data)
+				return
+			}
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+
+	o := Options{URL: front.URL, Headers: map[string]string{"Authorization": "Bearer k1-secret-value", "X-Client": "whoas"}, Secrets: []string{"k1-secret-value"}, Version: "v9"}
+	cs, done, err := agent(t, ctx, o, nil)
+	require.NoError(t, err)
+	_, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "whoami"})
+	require.Error(t, err)
+	var werr *jsonrpc.Error
+	require.ErrorAs(t, err, &werr)
+	require.Equal(t, int64(-32001), werr.Code)
+	require.Equal(t, "rejected X-Client=whoas Authorization=Bearer [redacted]", werr.Message)
+	require.JSONEq(t, `{"headers":"X-Client=whoas Authorization=Bearer [redacted]"}`, string(werr.Data))
+	require.NotContains(t, err.Error(), "k1-secret-value")
+	require.NoError(t, cs.Close())
+	require.NoError(t, wait(t, done))
 }

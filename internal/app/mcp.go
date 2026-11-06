@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -91,11 +93,12 @@ func mcpProxy(ctx context.Context, arg string, stdin io.Reader, stdout, stderr i
 	if err != nil {
 		return fail(lockedOr(err), lockedErr(err))
 	}
-	headers, err := a.RenderHeaders(env.Secrets())
+	values := env.Secrets()
+	headers, err := a.RenderHeaders(values)
 	if err != nil {
 		return fail(exitProxyNoIdentity, fmt.Errorf("%w; remove and re-add it: whoas rm %s && whoas add %s %s", err, res.Ref, a.Name, res.Ref.Alias))
 	}
-	err = mcpproxy.Run(ctx, mcpproxy.Options{URL: a.MCP.URL, Headers: headers, Stdin: stdin, Stdout: stdout, Version: Version})
+	err = mcpproxy.Run(ctx, mcpproxy.Options{URL: a.MCP.URL, Headers: headers, Secrets: slices.Collect(maps.Values(values)), Stdin: stdin, Stdout: stdout, Version: Version})
 	if err != nil {
 		return fail(exitProxyRemote, fmt.Errorf("%s: %w", a.MCP.URL, err))
 	}

@@ -5,6 +5,8 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +215,38 @@ env = "FAKE_KEY"
 	require.Contains(t, stderr, `"initialize"`)
 	require.Contains(t, stderr, "Unauthorized")
 	require.NotContains(t, stderr, "other-secret-key")
+}
+
+// The proxy redacts the identity's secret values from what the remote
+// echoes back, and only those: literal header text survives.
+func TestMCPProxyRedactsSecretValues(t *testing.T) {
+	root := proxyEnv(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m struct {
+			ID json.RawMessage `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&m)
+		echo := "X-Client=" + r.Header.Get("X-Client") + " Authorization=" + r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32001,"message":%q}}`, m.ID, "rejected "+echo)
+	}))
+	t.Cleanup(ts.Close)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cfg", "adapters", "fake.toml"), []byte(`name = "mcp-fake"
+kind = "mcp"
+[mcp]
+server  = "fake"
+url     = "`+ts.URL+`/mcp"
+headers = { Authorization = "Bearer {FAKE_KEY}", X-Client = "whoas" }
+[[secret]]
+env = "FAKE_KEY"
+`), 0o600))
+	seal(t, ref.Ref{Provider: "mcp-fake", Alias: "acme"}, map[string]string{"FAKE_KEY": "acme-secret-key"})
+
+	_, code, stderr := callWhoami(t, "fake@acme")
+	require.Equal(t, 1, code)
+	require.Contains(t, stderr, "rejected X-Client=whoas Authorization=Bearer [redacted]")
+	require.NotContains(t, stderr, "acme-secret-key")
 }
 
 // TestMCPProxyUntrustedProject verifies that untrusted .whoas.yaml files are
