@@ -238,7 +238,7 @@ func TestEnvTokenAdapter(t *testing.T) {
 
 	for name, c := range map[string]struct{ body, errSubstr string }{
 		"dir section":     {token + "[dir]\nglobal = \"{home}/.t\"\n", "[dir] is not valid"},
-		"login cmd":       {replace(token, `hint = "Create one at https://example.com/tokens"`, `cmd = ["tok", "login"]`), "login.cmd is not valid"},
+		"login cmd bin":   {replace(token, `hint = "Create one at https://example.com/tokens"`, `cmd = ["sh", "-c", "evil"]`), `login.cmd must start with "tok"`},
 		"no secrets":      {"name = \"tok\"\nbin = \"tok\"\nkind = \"env-token\"\n", "at least one [[secret]]"},
 		"duplicate env":   {replace(token, `env      = "TOK_HOST"`, `env      = "TOK_KEY"`), "declared twice"},
 		"bad env":         {replace(token, `env   = "TOK_KEY"`, `env   = "tok-key"`), "secret env name"},
@@ -368,4 +368,138 @@ func TestConflicts(t *testing.T) {
 	wrangler, _ := r.Get("wrangler")
 	require.Equal(t, []string{"{home}/.wrangler"}, wrangler.Dir.Conflicts)
 	require.Contains(t, wrangler.Login.Hint, "~/.config/.wrangler")
+}
+
+func TestEnvTokenLoginCmd(t *testing.T) {
+	body := replace(token, `hint = "Create one at https://example.com/tokens"`, "cmd  = [\"tok\", \"setup-token\"]\nhint = \"Paste the token tok prints\"")
+	a, err := Parse([]byte(body), "tok login")
+	require.NoError(t, err, "env-token adapters may run their own bin to obtain the token")
+	require.Equal(t, []string{"tok", "setup-token"}, a.Login.Cmd)
+	require.Equal(t, "Paste the token tok prints", a.Login.Hint)
+
+	_, err = Parse([]byte(token+"[mcp]\nserver = \"tok\"\n"), "mcp on env-token")
+	require.ErrorContains(t, err, "[mcp] is only valid for mcp adapters")
+}
+
+const mcpAcme = `name = "mcp-acme"
+kind = "mcp"
+
+[mcp]
+server  = "acme"
+url     = "https://mcp.acme.example/mcp"
+headers = { Authorization = "Bearer {ACME_KEY}", X-Acme-Org = "{ACME_ORG}" }
+
+[[secret]]
+env   = "ACME_KEY"
+label = "Acme API key"
+
+[[secret]]
+env      = "ACME_ORG"
+label    = "Acme org"
+plain    = true
+optional = true
+
+[login]
+hint = "Create one at https://acme.example/keys"
+`
+
+func TestMCPAdapter(t *testing.T) {
+	a, err := Parse([]byte(mcpAcme), "mcp")
+	require.NoError(t, err)
+	require.Equal(t, KindMCP, a.Kind)
+	require.Empty(t, a.Bin)
+	require.Equal(t, MCPSpec{
+		Server:  "acme",
+		URL:     "https://mcp.acme.example/mcp",
+		Headers: map[string]string{"Authorization": "Bearer {ACME_KEY}", "X-Acme-Org": "{ACME_ORG}"},
+	}, a.MCP)
+
+	h, err := a.RenderHeaders(map[string]string{"ACME_KEY": "k1", "ACME_ORG": "org9"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"Authorization": "Bearer k1", "X-Acme-Org": "org9"}, h)
+
+	h, err = a.RenderHeaders(map[string]string{"ACME_KEY": "k1"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{"Authorization": "Bearer k1"}, h, "a header using an empty optional secret is omitted")
+
+	_, err = a.RenderHeaders(map[string]string{"ACME_ORG": "org9"})
+	require.EqualError(t, err, "mcp-acme: identity has no ACME_KEY")
+
+	_, err = a.RenderHeaders(map[string]string{"ACME_KEY": "k1\r\nX-Evil: 1"})
+	require.ErrorContains(t, err, "contains CR or LF")
+
+	for _, u := range []string{"http://127.0.0.1:8080/mcp", "http://localhost/mcp", "http://[::1]:9/mcp"} {
+		_, err := Parse([]byte(replace(mcpAcme, "https://mcp.acme.example/mcp", u)), u)
+		require.NoError(t, err, "http is allowed for loopback %s", u)
+	}
+	_, err = Parse([]byte(replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\nauth    = \"header\"")), "auth header")
+	require.NoError(t, err)
+}
+
+func TestMCPRejects(t *testing.T) {
+	cases := map[string]struct{ body, errSubstr string }{
+		"bin":              {replace(mcpAcme, `kind = "mcp"`, "kind = \"mcp\"\nbin = \"acme\""), "bin is not valid for mcp adapters"},
+		"dir":              {mcpAcme + "[dir]\nglobal = \"{home}/.acme\"\n", "[dir] is not valid for mcp adapters"},
+		"unset_env":        {replace(mcpAcme, `kind = "mcp"`, "kind = \"mcp\"\nunset_env = [\"ACME_TOKEN\"]"), "unset_env is not valid for mcp adapters"},
+		"whoami":           {mcpAcme + "[whoami]\njson = \"user\"\n", "[whoami] is not valid for mcp adapters"},
+		"login cmd":        {replace(mcpAcme, `hint = "Create one at https://acme.example/keys"`, `cmd = ["acme", "login"]`), "login.cmd is not valid for mcp adapters"},
+		"server missing":   {replace(mcpAcme, `server  = "acme"`, ``), "mcp.server"},
+		"server bad":       {replace(mcpAcme, `server  = "acme"`, `server  = "Acme Server"`), "mcp.server"},
+		"server reserved":  {replace(mcpAcme, `server  = "acme"`, `server  = "run"`), "mcp.server"},
+		"url http remote":  {replace(mcpAcme, "https://mcp.acme.example/mcp", "http://mcp.acme.example/mcp"), "only allowed for a loopback host"},
+		"url ftp":          {replace(mcpAcme, "https://mcp.acme.example/mcp", "ftp://mcp.acme.example/mcp"), "must use https"},
+		"url relative":     {replace(mcpAcme, "https://mcp.acme.example/mcp", "/mcp"), "absolute http(s) URL"},
+		"url credentials":  {replace(mcpAcme, "https://mcp.acme.example/mcp", "https://u:p@mcp.acme.example/mcp"), "without credentials"},
+		"no headers":       {replace(mcpAcme, `headers = { Authorization = "Bearer {ACME_KEY}", X-Acme-Org = "{ACME_ORG}" }`, ``), "mcp.headers needs at least one header"},
+		"bad header name":  {replace(mcpAcme, `X-Acme-Org = "{ACME_ORG}"`, `"X Acme" = "{ACME_ORG}"`), "not a valid HTTP header name"},
+		"header CRLF":      {replace(mcpAcme, `"Bearer {ACME_KEY}"`, `"Bearer {ACME_KEY}\r\nX-Evil: 1"`), "contains CR or LF"},
+		"undeclared var":   {replace(mcpAcme, `"Bearer {ACME_KEY}"`, `"Bearer {ACME_KEY}{ACME_SECRET}"`), "{ACME_SECRET}, which is not a declared [[secret]]"},
+		"typo var":         {replace(mcpAcme, `"Bearer {ACME_KEY}"`, `"Bearer {ACME-KEY}"`), "{ACME-KEY}, which is not a declared [[secret]]"},
+		"unused secret":    {replace(mcpAcme, `X-Acme-Org = "{ACME_ORG}"`, `X-Acme-Org = "fixed"`), "secret ACME_ORG is not used"},
+		"no secrets":       {"name = \"mcp-acme\"\nkind = \"mcp\"\n[mcp]\nserver = \"acme\"\nurl = \"https://a.example/mcp\"\nheaders = { X-A = \"1\" }\n", "mcp adapters need at least one [[secret]]"},
+		"only optional":    {replace(mcpAcme, "label = \"Acme API key\"\n", "label = \"Acme API key\"\noptional = true\n"), "at least one non-optional [[secret]]"},
+		"duplicate secret": {replace(mcpAcme, `env      = "ACME_ORG"`, `env      = "ACME_KEY"`), "declared twice"},
+		"bad secret env":   {replace(mcpAcme, `env   = "ACME_KEY"`, `env   = "acme-key"`), "secret env name"},
+		"auth oauth":       {replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\nauth    = \"oauth\""), `"oauth" is not supported yet`},
+		"auth other":       {replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\nauth    = \"basic\""), `mcp.auth "basic" not supported`},
+		"unknown mcp key":  {replace(mcpAcme, `server  = "acme"`, "server  = \"acme\"\ntransport = \"sse\""), "unknown keys"},
+	}
+	for name, c := range cases {
+		_, err := Parse([]byte(c.body), name)
+		require.ErrorContains(t, err, c.errSubstr, name)
+	}
+}
+
+// mcpAdapter is a minimal user mcp adapter named name for server.
+func mcpAdapter(name, server string) string {
+	return `name = "` + name + `"
+kind = "mcp"
+[mcp]
+server  = "` + server + `"
+url     = "http://127.0.0.1:1/mcp"
+headers = { Authorization = "Bearer {K}" }
+[[secret]]
+env = "K"
+`
+}
+
+func TestMCPRegistry(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.toml"), []byte(mcpAdapter("mcp-a", "alpha")), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.toml"), []byte(mcpAdapter("mcp-b", "beta")), 0o600))
+	r, err := LoadRegistry(dir)
+	require.NoError(t, err, "mcp adapters have no bin, so they never collide on it")
+	a, ok := r.ByServer("beta")
+	require.True(t, ok)
+	require.Equal(t, "mcp-b", a.Name)
+	_, ok = r.ByServer("gamma")
+	require.False(t, ok)
+	_, ok = r.ByServer("")
+	require.False(t, ok)
+	_, ok = r.ByBin("")
+	require.False(t, ok, "an empty bin never matches an mcp adapter")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "c.toml"), []byte(mcpAdapter("mcp-c", "alpha")), 0o600))
+	_, err = LoadRegistry(dir)
+	require.ErrorContains(t, err, `adapters "mcp-a" and "mcp-c" both use mcp.server "alpha"`)
 }
