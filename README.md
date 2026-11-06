@@ -300,6 +300,8 @@ $ whoas claude@team                # another, at the same time
 $ printf '%s\n' "$TOKEN" | whoas add claude ci --stdin   # scripts: no setup-token
 ```
 
+whoas rejects a token that is not `sk-ant-oat01-...` (paste it on one line).
+
 With shims (or `whoas run`), a plain `claude` in a repo whose `.whoas.yaml` says
 `claude: team` runs as `claude@team`; where no identity applies it passes
 through to your normal `/login`, which whoas never touches.
@@ -581,6 +583,7 @@ kind = "env-token"
 [[secret]]
 env   = "MYCLI_TOKEN"
 label = "MyCLI API Token"            # shown in the hidden prompt
+pattern = "^mycli_[A-Za-z0-9]+$"     # optional Go regexp: add/import reject a non-empty value that does not match
 
 [[secret]]
 env      = "MYCLI_HOST"

@@ -87,6 +87,7 @@ unset_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
 [[secret]]
 env   = "CLAUDE_CODE_OAUTH_TOKEN"
 label = "Claude subscription token"
+pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"
 
 [login]
 cmd  = ["fakeclaude", "envkey", "ANTHROPIC_API_KEY", "env", "WHOAS_CONTEXT_DIR", "setup-token"]

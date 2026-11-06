@@ -46,7 +46,7 @@ func newImportCmd() *cobra.Command {
 				return fmt.Errorf("%s already exists (whoas rm %s first)", r, r)
 			}
 			if a.Kind == adapter.KindEnvToken {
-				values, err := secretsFromEnv(a, os.Getenv)
+				values, err := secretsFromEnv(a, r, os.Getenv)
 				if err != nil {
 					return err
 				}

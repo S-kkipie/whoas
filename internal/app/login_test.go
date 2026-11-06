@@ -39,7 +39,7 @@ func TestObtainSecretsRunsLoginCmd(t *testing.T) {
 		return "", nil
 	}
 	var out bytes.Buffer
-	got, err := obtainSecrets(a, bin, false, strings.NewReader(""), &out, io.Discard, ask)
+	got, err := obtainSecrets(a, tokRef, bin, false, strings.NewReader(""), &out, io.Discard, ask)
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{"TOK_KEY": "k1", "TOK_HOST": ""}, got)
 	require.Equal(t, "helper-out\n", out.String(), "login.cmd writes to the caller's stdout")
@@ -48,13 +48,13 @@ func TestObtainSecretsRunsLoginCmd(t *testing.T) {
 	require.Equal(t, "setup-token\nkey=unset legacy=unset\n", string(data))
 
 	require.NoError(t, os.Remove(marker))
-	got, err = obtainSecrets(a, bin, true, strings.NewReader("k2\n"), io.Discard, io.Discard, nil)
+	got, err = obtainSecrets(a, tokRef, bin, true, strings.NewReader("k2\n"), io.Discard, io.Discard, nil)
 	require.NoError(t, err)
 	require.Equal(t, "k2", got["TOK_KEY"])
 	require.NoFileExists(t, marker, "--stdin never runs login.cmd")
 
 	t.Setenv("TOK_EXIT", "3")
-	_, err = obtainSecrets(a, bin, false, strings.NewReader(""), io.Discard, io.Discard, func(string, bool) (string, error) {
+	_, err = obtainSecrets(a, tokRef, bin, false, strings.NewReader(""), io.Discard, io.Discard, func(string, bool) (string, error) {
 		t.Fatal("asked after a failed login.cmd")
 		return "", nil
 	})

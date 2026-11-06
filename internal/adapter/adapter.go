@@ -21,6 +21,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 
@@ -74,6 +75,33 @@ type Secret struct {
 	Label    string `toml:"label"`
 	Plain    bool   `toml:"plain"`    // not secret: prompt with echo (e.g. a host name)
 	Optional bool   `toml:"optional"` // may be left empty
+	// Pattern, when set, is a Go regexp every non-empty value must match; it
+	// catches truncated or wrapped pastes before anything is sealed.
+	Pattern string `toml:"pattern"`
+}
+
+var patternCache sync.Map // pattern -> *regexp.Regexp
+
+func compilePattern(p string) (*regexp.Regexp, error) {
+	if re, ok := patternCache.Load(p); ok {
+		return re.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(p)
+	if err != nil {
+		return nil, err
+	}
+	patternCache.Store(p, re)
+	return re, nil
+}
+
+// Matches reports whether v satisfies the secret's pattern (always true when
+// there is none). Validate guarantees a set pattern compiles.
+func (s Secret) Matches(v string) bool {
+	if s.Pattern == "" {
+		return true
+	}
+	re, err := compilePattern(s.Pattern)
+	return err == nil && re.MatchString(v)
 }
 
 // DirSpec says where the session lives and how to redirect the CLI.
@@ -291,6 +319,11 @@ func (a *Adapter) validateSecrets() error {
 			return fmt.Errorf("secret env %s declared twice", s.Env)
 		}
 		seen[s.Env] = true
+		if s.Pattern != "" {
+			if _, err := compilePattern(s.Pattern); err != nil {
+				return fmt.Errorf("secret %s: pattern is not a valid regexp: %w", s.Env, err)
+			}
+		}
 		if !s.Optional {
 			required++
 		}

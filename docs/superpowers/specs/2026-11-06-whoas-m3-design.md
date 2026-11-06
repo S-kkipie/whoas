@@ -44,6 +44,7 @@ unset_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDRO
 [[secret]]
 env   = "CLAUDE_CODE_OAUTH_TOKEN"
 label = "Claude subscription token"
+pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"
 
 [login]
 cmd  = ["claude", "setup-token"]
@@ -58,6 +59,7 @@ M2 forbade `login.cmd` on `env-token` adapters. M3 allows it.
 - **`--stdin`:** with `whoas add <p> <alias> --stdin`, `login.cmd` is **not** run. That form is for scripts.
 
 ### Behaviour
+- **Token format:** the built-in secret has `pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"`; `add` (prompt or `--stdin`) and `import` reject a value that does not match before sealing, so a token the terminal wrapped over two lines cannot be sealed as a fragment. The error never prints the value.
 - **`whoas add claude max`:** shows the hint, runs `claude setup-token`, then prompts `Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN): ` with echo off, and seals.
   - No whoami: Claude has none that doesn't spend quota, so the account label is empty.
   - Generating a token does not touch the user's saved `/login` or running sessions.

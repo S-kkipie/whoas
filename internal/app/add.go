@@ -56,7 +56,7 @@ func newAddCmd() *cobra.Command {
 						return err
 					}
 				}
-				values, err := obtainSecrets(a, loginBin, fromStdin, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ttyAsk)
+				values, err := obtainSecrets(a, r, loginBin, fromStdin, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr(), ttyAsk)
 				if err != nil {
 					return err
 				}

@@ -536,7 +536,10 @@ func TestClaudeBuiltin(t *testing.T) {
 	require.Equal(t, KindEnvToken, c.Kind)
 	unset := []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_MANTLE"}
 	require.Equal(t, unset, c.UnsetEnv, "everything that outranks CLAUDE_CODE_OAUTH_TOKEN or selects another provider")
-	require.Equal(t, []Secret{{Env: "CLAUDE_CODE_OAUTH_TOKEN", Label: "Claude subscription token"}}, c.Secrets)
+	require.Equal(t, []Secret{{Env: "CLAUDE_CODE_OAUTH_TOKEN", Label: "Claude subscription token", Pattern: "^sk-ant-oat01-[A-Za-z0-9_-]+$"}}, c.Secrets)
+	require.True(t, c.Secrets[0].Matches("sk-ant-oat01-abc_DEF-123"))
+	require.False(t, c.Secrets[0].Matches("sE5HZI7nb0x5a"))
+	require.False(t, c.Secrets[0].Matches("sk-ant-oat01-abc\ndef"))
 	require.Equal(t, []string{"claude", "setup-token"}, c.Login.Cmd)
 	require.Equal(t, "Pick the account in your browser, then paste the token claude prints.", c.Login.Hint)
 	require.Empty(t, c.Whoami.Cmd, "no whoami: Claude has none that does not spend quota")
@@ -594,4 +597,21 @@ func TestUserReplacesMCPBuiltin(t *testing.T) {
 	require.Equal(t, "ph", a.MCP.Server)
 	_, ok = r.ByServer("posthog")
 	require.False(t, ok)
+}
+
+func TestSecretPattern(t *testing.T) {
+	withPattern := func(p string) string {
+		return replace(token, `env   = "TOK_KEY"`, `env   = "TOK_KEY"`+"\npattern = '"+p+"'")
+	}
+	a, err := Parse([]byte(withPattern(`^tk_[a-z]+$`)), "tok")
+	require.NoError(t, err)
+	require.Equal(t, `^tk_[a-z]+$`, a.Secrets[0].Pattern)
+	require.True(t, a.Secrets[0].Matches("tk_abc"))
+	require.False(t, a.Secrets[0].Matches("tk_ABC"))
+	require.True(t, a.Secrets[1].Matches("anything"), "no pattern accepts any value")
+
+	_, err = Parse([]byte(withPattern(`^tk_[a-z`)), "tok")
+	require.ErrorContains(t, err, "tok")
+	require.ErrorContains(t, err, "TOK_KEY")
+	require.ErrorContains(t, err, "pattern")
 }

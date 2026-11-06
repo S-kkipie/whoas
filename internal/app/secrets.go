@@ -23,7 +23,7 @@ type askFunc func(label string, hidden bool) (string, error)
 
 // readSecrets collects a value for each of a's secrets: one line per secret,
 // in declaration order, from in when fromStdin is set; otherwise by asking.
-func readSecrets(a *adapter.Adapter, fromStdin bool, in io.Reader, ask askFunc) (map[string]string, error) {
+func readSecrets(a *adapter.Adapter, r ref.Ref, fromStdin bool, in io.Reader, ask askFunc) (map[string]string, error) {
 	values := map[string]string{}
 	var sc *bufio.Scanner
 	if fromStdin {
@@ -49,14 +49,29 @@ func readSecrets(a *adapter.Adapter, fromStdin bool, in io.Reader, ask askFunc) 
 		}
 		values[s.Env] = v
 	}
+	if err := checkPatterns(a, r, values); err != nil {
+		return nil, err
+	}
 	return values, nil
+}
+
+// checkPatterns is the one place every path (prompt, --stdin, import) vets
+// its values: each non-empty value must match its secret's pattern. The error
+// never carries the value.
+func checkPatterns(a *adapter.Adapter, r ref.Ref, values map[string]string) error {
+	for _, s := range a.Secrets {
+		if v := values[s.Env]; v != "" && !s.Matches(v) {
+			return fmt.Errorf("%s: %s does not look right (expected format: %s); paste the whole value on one line", r, s.PromptLabel(), s.Pattern)
+		}
+	}
+	return nil
 }
 
 // obtainSecrets runs a's login.cmd (bin is its resolved binary) unless the
 // secrets come from stdin, then collects the secrets. The command gets the
 // caller's stdio and an environment without the adapter's secret and
 // unset_env vars (plus WHOAS_CONTEXT_DIR); if it fails, nothing is asked.
-func obtainSecrets(a *adapter.Adapter, bin string, fromStdin bool, in io.Reader, out, errw io.Writer, ask askFunc) (map[string]string, error) {
+func obtainSecrets(a *adapter.Adapter, r ref.Ref, bin string, fromStdin bool, in io.Reader, out, errw io.Writer, ask askFunc) (map[string]string, error) {
 	if len(a.Login.Cmd) > 0 && !fromStdin {
 		c := exec.Command(bin, a.Login.Cmd[1:]...)
 		c.Env = withContext(a.SecretEnv(os.Environ(), nil))
@@ -65,11 +80,11 @@ func obtainSecrets(a *adapter.Adapter, bin string, fromStdin bool, in io.Reader,
 			return nil, fmt.Errorf("%s failed: %w; nothing saved", strings.Join(a.Login.Cmd, " "), err)
 		}
 	}
-	return readSecrets(a, fromStdin, in, ask)
+	return readSecrets(a, r, fromStdin, in, ask)
 }
 
 // secretsFromEnv reads a's secrets from the environment (whoas import).
-func secretsFromEnv(a *adapter.Adapter, getenv func(string) string) (map[string]string, error) {
+func secretsFromEnv(a *adapter.Adapter, r ref.Ref, getenv func(string) string) (map[string]string, error) {
 	values := map[string]string{}
 	var missing []string
 	for _, s := range a.Secrets {
@@ -81,6 +96,9 @@ func secretsFromEnv(a *adapter.Adapter, getenv func(string) string) (map[string]
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("not set in the environment: %s", strings.Join(missing, ", "))
+	}
+	if err := checkPatterns(a, r, values); err != nil {
+		return nil, err
 	}
 	return values, nil
 }
