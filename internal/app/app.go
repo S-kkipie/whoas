@@ -13,7 +13,7 @@ import (
 	"github.com/S-kkipie/whoas/internal/ref"
 )
 
-// Version is set at build time:
+// Version is set at build time (see version() for the fallback):
 // -ldflags "-X github.com/S-kkipie/whoas/internal/app.Version=v1.2.3".
 var Version = "dev"
 
