@@ -1,7 +1,9 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/S-kkipie/whoas/internal/adapter"
@@ -57,12 +59,18 @@ func (e *env) initVault() (*vault.Vault, error) {
 	if err != nil {
 		return nil, err
 	}
+	_, statErr := os.Stat(e.dirs.RecipientFile())
+	created := errors.Is(statErr, fs.ErrNotExist)
 	v, err := vault.Init(e.dirs.RecipientFile(), e.dirs.VaultDir(), st)
 	if err != nil {
 		return nil, err
 	}
-	if err := keystore.Remember(e.dirs.Data, st); err != nil {
-		return nil, err
+	// Only the store that created the vault is known to hold its master key;
+	// an existing vault opened under a one-off override must not repoint it.
+	if created {
+		if err := keystore.Remember(e.dirs.Data, st); err != nil {
+			return nil, err
+		}
 	}
 	return v, nil
 }
