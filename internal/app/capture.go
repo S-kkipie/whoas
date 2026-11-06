@@ -40,17 +40,22 @@ func whoami(a *adapter.Adapter, bin, dir string) string {
 	return parseAccount(out.Bytes(), a.Whoami.JSON)
 }
 
-func parseAccount(out []byte, jsonPath string) string {
-	s := ""
+func parseAccount(out []byte, jsonPath string) string { return shortLabel(accountField(out, jsonPath)) }
+
+// accountField is the whoami JSON field, or the first non-empty line.
+func accountField(out []byte, jsonPath string) string {
 	if jsonPath != "" {
-		s = gjson.GetBytes(out, jsonPath).String()
-	} else {
-		for _, line := range strings.Split(string(out), "\n") {
-			if s = strings.TrimSpace(line); s != "" {
-				break
-			}
+		return gjson.GetBytes(out, jsonPath).String()
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			return s
 		}
 	}
+	return ""
+}
+
+func shortLabel(s string) string {
 	if len(s) > 80 {
 		s = s[:80]
 	}

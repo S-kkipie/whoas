@@ -243,6 +243,10 @@ func TestEnvTokenAdapter(t *testing.T) {
 		"duplicate env":   {replace(token, `env      = "TOK_HOST"`, `env      = "TOK_KEY"`), "declared twice"},
 		"bad env":         {replace(token, `env   = "TOK_KEY"`, `env   = "tok-key"`), "secret env name"},
 		"secret in unset": {replace(token, `unset_env = ["TOK_LEGACY"]`, `unset_env = ["TOK_KEY"]`), "cannot also be in unset_env"},
+		"only optional":   {replace(token, "label = \"Tok API Key\"\n", "label = \"Tok API Key\"\noptional = true\n"), "at least one non-optional [[secret]]"},
+		"secret HOME":     {replace(token, `env   = "TOK_KEY"`, `env   = "HOME"`), "secret env HOME is a root variable"},
+		"secret XDG cfg":  {replace(token, `env   = "TOK_KEY"`, `env   = "XDG_CONFIG_HOME"`), "secret env XDG_CONFIG_HOME is a root variable"},
+		"secret XDG data": {replace(token, `env      = "TOK_HOST"`, `env      = "XDG_DATA_HOME"`), "secret env XDG_DATA_HOME is a root variable"},
 	} {
 		_, err := Parse([]byte(c.body), name)
 		require.ErrorContains(t, err, c.errSubstr, name)
@@ -297,18 +301,9 @@ func TestTokenBuiltins(t *testing.T) {
 
 	tokens := 0
 	for _, n := range r.Names() {
-		a, _ := r.Get(n)
-		if a.Kind != KindEnvToken {
-			continue
+		if a, _ := r.Get(n); a.Kind == KindEnvToken {
+			tokens++
 		}
-		tokens++
-		required := 0
-		for _, s := range a.Secrets {
-			if !s.Optional {
-				required++
-			}
-		}
-		require.Positive(t, required, "%s needs at least one required secret", n)
 	}
 	require.GreaterOrEqual(t, tokens, 60)
 

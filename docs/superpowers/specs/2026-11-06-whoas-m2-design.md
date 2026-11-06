@@ -76,15 +76,16 @@ plain    = false        # true: not secret (a host, an org) → prompt with echo
 [login]
 hint = "Create one at https://dashboard.stripe.com/apikeys"
 
-[whoami]
-cmd  = ["stripe", "config", "--list"]
-json = ""
+# [whoami] is optional, as for dir-overlay adapters: a command that prints the
+# account (never one that dumps config). A label that contains a non-plain
+# secret is dropped.
 ```
 Env-var names may contain lowercase letters (`TF_TOKEN_app_terraform_io`), here and in `unset_env`/`inject.env`.
 
 Validation:
 - `[dir]` and `login.cmd` are forbidden.
-- There must be ≥ 1 `[[secret]]`.
+- There must be ≥ 1 `[[secret]]`, and ≥ 1 of them must not be `optional`.
+- No `secret.env` is `HOME`, `XDG_CONFIG_HOME` or `XDG_DATA_HOME` (only root overlays inject those).
 - Each `secret.env` matches the env-name regex and is unique.
 - No `secret.env` appears in `unset_env`.
 - `whoami.cmd[0] == bin` (as in M1).

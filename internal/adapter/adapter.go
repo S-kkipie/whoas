@@ -227,9 +227,15 @@ func (a *Adapter) validateEnvToken() error {
 		return errors.New("env-token adapters need at least one [[secret]]")
 	}
 	seen := map[string]bool{}
+	required := 0
 	for _, s := range a.Secrets {
 		if !envNameRe.MatchString(s.Env) {
 			return fmt.Errorf("secret env name %q invalid", s.Env)
+		}
+		for _, v := range rootVars {
+			if s.Env == v {
+				return fmt.Errorf("secret env %s is a root variable (only root overlays may set it)", s.Env)
+			}
 		}
 		if seen[s.Env] {
 			return fmt.Errorf("secret env %s declared twice", s.Env)
@@ -238,6 +244,12 @@ func (a *Adapter) validateEnvToken() error {
 		if slices.Contains(a.UnsetEnv, s.Env) {
 			return fmt.Errorf("secret env %s cannot also be in unset_env", s.Env)
 		}
+		if !s.Optional {
+			required++
+		}
+	}
+	if required == 0 {
+		return errors.New("env-token adapters need at least one non-optional [[secret]]")
 	}
 	return nil
 }

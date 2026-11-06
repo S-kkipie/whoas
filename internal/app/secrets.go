@@ -90,7 +90,8 @@ func ttyAsk(label string, hidden bool) (string, error) {
 }
 
 // whoamiWithSecrets returns the account label of an env-token identity, or
-// "" when the adapter has no whoami or it fails.
+// "" when the adapter has no whoami, it fails, or its output would put a
+// (non-plain) secret in the label.
 func whoamiWithSecrets(a *adapter.Adapter, bin string, values map[string]string) string {
 	if len(a.Whoami.Cmd) == 0 {
 		return ""
@@ -102,7 +103,13 @@ func whoamiWithSecrets(a *adapter.Adapter, bin string, values map[string]string)
 	if err := c.Run(); err != nil {
 		return ""
 	}
-	return parseAccount(out.Bytes(), a.Whoami.JSON)
+	field := accountField(out.Bytes(), a.Whoami.JSON)
+	for _, s := range a.Secrets {
+		if v := values[s.Env]; !s.Plain && v != "" && strings.Contains(field, v) {
+			return ""
+		}
+	}
+	return shortLabel(field)
 }
 
 // warnHelperKeys reports credentials that a captured auth file delegates to
