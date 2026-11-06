@@ -170,12 +170,13 @@ func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Va
 	return true, overlay.Remove(dir)
 }
 
-// promote shares the overlay's new non-auth files and warns about mirrored
-// entries that were replaced during the run (their change is lost).
+// promote shares the overlay's new non-auth files, copies back mirrored files
+// replaced during the run, and warns about replaced entries whose global copy
+// was kept (it changed too, or is not a plain file).
 func promote(dir, global string, a *adapter.Adapter, r ref.Ref, warn io.Writer) {
 	replaced, err := overlay.Promote(dir, global, a.Dir.AuthFiles)
 	for _, name := range replaced {
-		fmt.Fprintf(warn, "whoas: warning: %s: %s was replaced during the run; the change was not copied to %s\n", r, name, filepath.Join(global, filepath.FromSlash(name)))
+		fmt.Fprintf(warn, "whoas: warning: %s: %s was replaced during the run, but %s changed too (or is not a plain file); kept the global copy\n", r, name, filepath.Join(global, filepath.FromSlash(name)))
 	}
 	if err != nil {
 		fmt.Fprintf(warn, "whoas: warning: could not share new non-auth files: %v\n", err)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -115,35 +116,142 @@ func TestPromoteKeepsExistingGlobal(t *testing.T) {
 	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
 }
 
-// A tool that saves a dotfile by writing a new file and renaming it over the
-// mirrored symlink replaces the link inside the overlay: Promote keeps the
-// global entry and reports the lost change.
-func TestPromoteReportsReplacedMirroredEntries(t *testing.T) {
-	g := globalFixture(t)
-	dir := filepath.Join(t.TempDir(), "ov")
+func buildFixture(t *testing.T) (g, dir string) {
+	g = globalFixture(t)
+	dir = filepath.Join(t.TempDir(), "ov")
 	require.NoError(t, Build(dir, g, auth, map[string]envelope.File{
 		"auth.json":              {Data: []byte("id")},
 		".w/config/default.toml": {Data: []byte("id-toml")},
 	}))
-	renameOver := func(rel, body string) {
-		tmp := filepath.Join(dir, rel+".lock")
-		write(t, tmp, body)
-		require.NoError(t, os.Rename(tmp, filepath.Join(dir, rel)))
-	}
-	renameOver("a.txt", "edited")                          // mirrored top-level symlink
-	renameOver(filepath.Join(".w", "other.txt"), "edited") // mirrored symlink inside an auth parent
-	renameOver("auth.json", "refreshed")                   // auth file: sealed, never reported
-	renameOver(filepath.Join(".w", "config", "default.toml"), "refreshed")
+	return g, dir
+}
+
+// renameOver saves rel the way many CLIs do: write a temp file, rename it over
+// the mirrored symlink.
+func renameOver(t *testing.T, dir, rel, body string, mode os.FileMode) {
+	t.Helper()
+	tmp := filepath.Join(dir, rel+".lock")
+	write(t, tmp, body)
+	require.NoError(t, os.Chmod(tmp, mode))
+	require.NoError(t, os.Rename(tmp, filepath.Join(dir, rel)))
+}
+
+// A tool that saves a dotfile by writing a new file and renaming it over the
+// mirrored symlink replaces the link inside the overlay: when the global file
+// did not change meanwhile, Promote copies the new file back.
+func TestPromoteCopiesBackReplacedMirroredFiles(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "edited", 0o640)                            // mirrored top-level symlink
+	renameOver(t, dir, filepath.Join(".w", "other.txt"), "edited-w", 0o600) // mirrored symlink inside an auth parent
+	renameOver(t, dir, "auth.json", "refreshed", 0o600)                     // auth file: sealed, never copied
+	renameOver(t, dir, filepath.Join(".w", "config", "default.toml"), "refreshed", 0o600)
 	write(t, filepath.Join(dir, "fresh.txt"), "new") // new entry: promoted
 
 	replaced, err := Promote(dir, g, auth)
 	require.NoError(t, err)
-	require.Equal(t, []string{".w/other.txt", "a.txt"}, replaced)
+	require.Empty(t, replaced)
+	require.Equal(t, "edited", read(t, filepath.Join(g, "a.txt")))
+	info, err := os.Stat(filepath.Join(g, "a.txt"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o640), info.Mode().Perm(), "mode preserved")
+	require.Equal(t, "edited-w", read(t, filepath.Join(g, ".w", "other.txt")))
+	require.False(t, isLink(t, filepath.Join(g, "a.txt")))
+	_, err = os.Lstat(filepath.Join(dir, "a.txt"))
+	require.True(t, os.IsNotExist(err), "overlay entry moved out")
 	require.True(t, isLink(t, filepath.Join(dir, "sub")), "untouched symlink")
-	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")), "not copied back")
-	require.Equal(t, "w-other", read(t, filepath.Join(g, ".w", "other.txt")))
 	require.Equal(t, "global-auth", read(t, filepath.Join(g, "auth.json")))
+	require.Equal(t, "global-toml", read(t, filepath.Join(g, ".w", "config", "default.toml")))
 	require.Equal(t, "new", read(t, filepath.Join(g, "fresh.txt")))
+	entries, err := os.ReadDir(g)
+	require.NoError(t, err)
+	for _, e := range entries {
+		require.NotContains(t, e.Name(), ".whoas-tmp-")
+	}
+}
+
+func TestPromoteKeepsGlobalThatChanged(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "overlay-edit", 0o600)
+	gp := filepath.Join(g, "a.txt")
+	write(t, gp, "global-edit-longer")
+	require.NoError(t, os.Chtimes(gp, time.Now().Add(time.Hour), time.Now().Add(time.Hour)))
+
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
+	require.Equal(t, "global-edit-longer", read(t, gp))
+}
+
+func TestPromoteKeepsGlobalWithSameSizeNewMtime(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "overlay", 0o600)
+	gp := filepath.Join(g, "a.txt")
+	write(t, gp, "SHARED") // same size as "shared"
+	require.NoError(t, os.Chtimes(gp, time.Now().Add(time.Hour), time.Now().Add(time.Hour)))
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
+	require.Equal(t, "SHARED", read(t, gp))
+}
+
+func TestPromoteUntouchedSymlinksNothing(t *testing.T) {
+	g, dir := buildFixture(t)
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Empty(t, replaced)
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+	require.True(t, isLink(t, filepath.Join(dir, "a.txt")))
+}
+
+func TestPromoteReportsReplacedDirectory(t *testing.T) {
+	g, dir := buildFixture(t)
+	require.NoError(t, os.Remove(filepath.Join(dir, "sub")))
+	write(t, filepath.Join(dir, "sub", "b.txt"), "overlay-b")
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sub"}, replaced)
+	require.Equal(t, "shared-b", read(t, filepath.Join(g, "sub", "b.txt")))
+}
+
+func TestPromoteWithoutManifestKeepsGlobal(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "edited", 0o600)
+	require.NoError(t, os.Remove(dir+".mirror.json"))
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+}
+
+func TestPromoteCopyBackCrossDevice(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "edited", 0o640)
+	rename = func(a, b string) error { return &os.LinkError{Op: "rename", Old: a, New: b, Err: syscall.EXDEV} }
+	t.Cleanup(func() { rename = os.Rename })
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Empty(t, replaced)
+	require.Equal(t, "edited", read(t, filepath.Join(g, "a.txt")))
+	info, err := os.Stat(filepath.Join(g, "a.txt"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o640), info.Mode().Perm())
+	entries, err := os.ReadDir(g)
+	require.NoError(t, err)
+	for _, e := range entries {
+		require.NotContains(t, e.Name(), ".whoas-tmp-")
+	}
+}
+
+func TestManifestNextToDirAndRemoved(t *testing.T) {
+	g, dir := buildFixture(t)
+	_, err := os.Stat(dir + ".mirror.json")
+	require.NoError(t, err)
+	_, err = os.Lstat(filepath.Join(dir, ".mirror.json"))
+	require.True(t, os.IsNotExist(err))
+	require.NoError(t, Remove(dir))
+	_, err = os.Stat(dir + ".mirror.json")
+	require.True(t, os.IsNotExist(err), "manifest removed with the overlay")
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
 }
 
 func TestPromoteCrossDevice(t *testing.T) {

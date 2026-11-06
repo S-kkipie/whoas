@@ -37,13 +37,13 @@ Out of M2: Claude Code + MCP (M3), native Windows, git identities, and the M1 de
 
 Any other combination is a load error. The overlay mechanics are unchanged: the whole root is mirrored as symlinks except `auth_files` (nested paths supported since M1), and new entries the CLI creates are promoted to the real root on exit.
 
-A tool that saves an existing file by writing a new one and renaming it over the mirrored symlink (`git config --global`, some shells' history) replaces the symlink inside the overlay. Existing global entries still win at promotion, so that change is not copied back; at teardown whoas prints one line per such entry (non-auth, not a parent of an auth path, present in the global dir, no longer a symlink in the overlay), for every dir-overlay adapter:
+A tool that saves an existing file by writing a new one and renaming it over the mirrored symlink (`git config --global`, some shells' history) replaces the symlink inside the overlay. At build, whoas records a fingerprint (regular file, size, mtime, mode) of each mirrored global entry in a manifest next to the overlay dir (`<dir>.mirror.json`, removed with it). At teardown such a replaced regular file is copied back over the global file when the global file still matches its fingerprint (auth files are never copied). If the global changed too, is not a plain file, the replacement is a directory, or there is no manifest (overlay from an older whoas), the global copy is kept and whoas prints one line per entry, for every dir-overlay adapter:
 
 ```
-whoas: warning: <provider>@<alias>: <name> was replaced during the run; the change was not copied to <global path>
+whoas: warning: <provider>@<alias>: <name> was replaced during the run, but <global path> changed too (or is not a plain file); kept the global copy
 ```
 
-Copying such changes back is a follow-up.
+Two identities replacing the same file: the first to finish copies back, the second sees the global changed and warns. The check-then-rename window is a small accepted TOCTOU.
 
 ### `helper_keys`
 Optional `dir.helper_keys = ["credsStore", "credHelpers"]`: top-level JSON keys of an auth file that delegate credentials to stores outside whoas. Each key must be a plain top-level key name. They are used for the warning described under Docker.
