@@ -190,6 +190,42 @@ func TestRunConcurrentCalls(t *testing.T) {
 	}
 }
 
+// Under protocol 2026-07-28 the SDK sets the version and Mcp-Method headers
+// itself; a notifications/cancelled that the proxy stamped with a version
+// header (but no Mcp-Method) is a 400, which would end the session.
+func TestRunSurvivesCancelledCallWhenStateless(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	gate := make(chan struct{})
+	var release sync.Once
+	ts, _ := testServer(t, "k1-secret-value", &mcp.StreamableHTTPOptions{Stateless: true}, gate)
+	t.Cleanup(func() { release.Do(func() { close(gate) }) })
+	cs, done, err := agent(t, ctx, Options{URL: ts.URL, Headers: map[string]string{"Authorization": "Bearer k1-secret-value"}, Version: "v9"}, nil)
+	require.NoError(t, err)
+
+	slowCtx, slowCancel := context.WithCancel(ctx)
+	errc := make(chan error, 1)
+	go func() {
+		_, err := cs.CallTool(slowCtx, &mcp.CallToolParams{Name: "wait"})
+		errc <- err
+	}()
+	time.Sleep(300 * time.Millisecond)
+	slowCancel() // the client sends notifications/cancelled through the proxy
+	require.Error(t, <-errc)
+	time.Sleep(300 * time.Millisecond) // let the notification reach the server
+
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "whoami"})
+	require.NoError(t, err, "the session survives the cancellation")
+	require.Equal(t, "key=k1-secret-value", res.Content[0].(*mcp.TextContent).Text)
+	select {
+	case err := <-done:
+		t.Fatalf("the proxy ended: %v", err)
+	default:
+	}
+	require.NoError(t, cs.Close())
+	require.NoError(t, wait(t, done))
+}
+
 // failingFront forwards to ts except for tools/call, which it answers with
 // status (and a body that echoes the key, which must never reach the agent).
 func failingFront(t *testing.T, ts *httptest.Server, status int) *httptest.Server {

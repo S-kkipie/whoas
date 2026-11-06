@@ -14,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -103,11 +102,7 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type session struct {
 	mu      sync.Mutex
 	initID  *jsonrpc.ID // the agent's initialize call
-	version string      // negotiated protocol version (initialize result or server/discover)
-	// discovering maps the agent's server/discover calls (the stateless
-	// handshake of protocol 2026-07-28, which has no initialize) to the
-	// protocol version each one asks for.
-	discovering map[jsonrpc.ID]string
+	version string      // protocol version from the initialize result (legacy handshake only)
 }
 
 func (s *session) protocolVersion() string {
@@ -210,7 +205,11 @@ func (b *bridger) send(ctx context.Context, msg jsonrpc.Message) error {
 // errRejectedCode is the code of the SDK's jsonrpc2.ErrRejected sentinel.
 const errRejectedCode = -32005
 
-// noteCall records what the response to a handshake call will tell us.
+// noteCall records the agent's initialize call, whose result carries the
+// protocol version. Sessions at 2026-07-28 or later (server/discover) are
+// left alone on purpose: the SDK sets Mcp-Protocol-Version and Mcp-Method
+// itself on those requests, and a version header without Mcp-Method on a
+// notification is a 400 that ends the session.
 func (s *session) noteCall(req *jsonrpc.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -218,24 +217,11 @@ func (s *session) noteCall(req *jsonrpc.Request) {
 	case "initialize":
 		id := req.ID
 		s.initID = &id
-	case "server/discover":
-		var p struct {
-			Meta map[string]any `json:"_meta"`
-		}
-		if json.Unmarshal(req.Params, &p) != nil {
-			return
-		}
-		if v, ok := p.Meta[mcp.MetaKeyProtocolVersion].(string); ok {
-			if s.discovering == nil {
-				s.discovering = map[jsonrpc.ID]string{}
-			}
-			s.discovering[req.ID] = v
-		}
 	}
 }
 
 // noteResponse takes the protocol version from the result of the initialize
-// or server/discover call that resp answers.
+// call that resp answers.
 func (s *session) noteResponse(resp *jsonrpc.Response) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -248,19 +234,10 @@ func (s *session) noteResponse(resp *jsonrpc.Response) {
 		}
 		return
 	}
-	if asked, ok := s.discovering[resp.ID]; ok {
-		delete(s.discovering, resp.ID)
-		var r struct {
-			SupportedVersions []string `json:"supportedVersions"`
-		}
-		if json.Unmarshal(resp.Result, &r) == nil && slices.Contains(r.SupportedVersions, asked) {
-			s.version = asked
-		}
-	}
 }
 
 // down forwards the remote's messages to the agent and records the protocol
-// version from the initialize or server/discover result.
+// version from the initialize result.
 func (b *bridger) down(ctx context.Context) error {
 	for {
 		msg, err := b.remote.Read(ctx)
