@@ -5,6 +5,7 @@ For anything larger, open an issue (or a [Discussion](https://github.com/S-kkipi
 for questions) first so we can agree on the approach before you write code.
 
 Security problems: please don't open an issue, see [SECURITY.md](SECURITY.md).
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 
