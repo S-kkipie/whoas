@@ -1,7 +1,11 @@
 # providers, doctor, agent lifecycle; AC-06: no secret ever printed.
+exec whoas providers --all
+stdout '^gh\s+gh\s+dir-overlay\s+builtin'
+stdout '^stripe\s+stripe\s+env-token\s+builtin'
+stdout '^fakecli\s+fakecli\s+dir-overlay\s+user\s+\S*fakecli$'
 exec whoas providers
-stdout '^gh\s+gh\s+dir-overlay'
-stdout '^fakecli\s+fakecli\s+dir-overlay\s+\S*fakecli$'
+stdout '^fakecli\s+fakecli\s+dir-overlay\s+user\s+\S*fakecli$'
+stdout 'more \(whoas providers --all\)$'
 
 exec whoas doctor
 stdout '^keystore\s+env \(WHOAS_MASTER_KEY\)$'
