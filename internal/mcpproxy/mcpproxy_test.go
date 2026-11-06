@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -106,14 +109,20 @@ func wait(t *testing.T, done chan error) error {
 }
 
 func TestRunInjectsHeaders(t *testing.T) {
-	for name, opts := range map[string]*mcp.ClientSessionOptions{
-		"initialize":     {ProtocolVersion: "2025-11-25"},
-		"latest version": nil,
+	for name, tc := range map[string]struct {
+		opts      *mcp.ClientSessionOptions
+		server    *mcp.StreamableHTTPOptions
+		wantAfter string // the Mcp-Protocol-Version of the tools/call
+	}{
+		"initialize":                      {&mcp.ClientSessionOptions{ProtocolVersion: "2025-11-25"}, nil, "2025-11-25"},
+		"latest version, stateful":        {nil, nil, "2025-11-25"}, // the stateful server rejects 2026-07-28, so the client initializes
+		"latest version, server/discover": {nil, &mcp.StreamableHTTPOptions{Stateless: true}, "2026-07-28"},
 	} {
+		opts := tc.opts
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			ts, rec := testServer(t, "k1-secret-value", nil, nil)
+			ts, rec := testServer(t, "k1-secret-value", tc.server, nil)
 			cs, done, err := agent(t, ctx, Options{URL: ts.URL + "/mcp", Headers: map[string]string{"Authorization": "Bearer k1-secret-value"}, Version: "v9"}, opts)
 			require.NoError(t, err)
 			res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "whoami"})
@@ -127,7 +136,7 @@ func TestRunInjectsHeaders(t *testing.T) {
 				require.Equal(t, "whoas/v9", s.agent, s.method)
 				if s.method == "tools/call" {
 					calls++
-					require.NotEmpty(t, s.version, "the negotiated protocol version is sent")
+					require.Equal(t, tc.wantAfter, s.version, "the negotiated protocol version is sent")
 				}
 			}
 			require.Equal(t, 1, calls)
@@ -135,33 +144,126 @@ func TestRunInjectsHeaders(t *testing.T) {
 	}
 }
 
-// After initialization, calls are sent concurrently: a server that answers
-// with plain JSON holds each POST open until its result is ready, and a slow
-// call must not hold back the others.
+// Calls are sent concurrently whatever the protocol version: a server that
+// holds each POST open until its result is ready (plain JSON, or an SSE
+// stream) must not let a slow call hold back the others. The stateless cases
+// leave the client's version unpinned, so it uses server/discover and never
+// sends initialize.
 func TestRunConcurrentCalls(t *testing.T) {
+	for name, tc := range map[string]struct {
+		opts   *mcp.ClientSessionOptions
+		server *mcp.StreamableHTTPOptions
+	}{
+		"2025-11-25 stateful, JSON": {&mcp.ClientSessionOptions{ProtocolVersion: "2025-11-25"}, &mcp.StreamableHTTPOptions{JSONResponse: true}},
+		"latest stateless, JSON":    {nil, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true}},
+		"latest stateless, SSE":     {nil, &mcp.StreamableHTTPOptions{Stateless: true}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			gate := make(chan struct{})
+			var release sync.Once
+			ts, _ := testServer(t, "k1-secret-value", tc.server, gate)
+			t.Cleanup(func() { release.Do(func() { close(gate) }) }) // runs before ts.Close, even when the test fails
+			cs, done, err := agent(t, ctx, Options{URL: ts.URL, Headers: map[string]string{"Authorization": "Bearer k1-secret-value"}, Version: "v9"}, tc.opts)
+			require.NoError(t, err)
+			slow := make(chan string, 1)
+			go func() {
+				res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "wait"})
+				if err != nil {
+					slow <- err.Error()
+					return
+				}
+				slow <- res.Content[0].(*mcp.TextContent).Text
+			}()
+			time.Sleep(100 * time.Millisecond) // let the slow call reach the server first
+			quick, qcancel := context.WithTimeout(ctx, 3*time.Second)
+			defer qcancel()
+			res, err := cs.CallTool(quick, &mcp.CallToolParams{Name: "whoami"})
+			require.NoError(t, err, "a call is not held back by a pending one")
+			require.Equal(t, "key=k1-secret-value", res.Content[0].(*mcp.TextContent).Text)
+			release.Do(func() { close(gate) })
+			require.Equal(t, "released", <-slow)
+			require.NoError(t, cs.Close())
+			require.NoError(t, wait(t, done))
+		})
+	}
+}
+
+// failingFront forwards to ts except for tools/call, which it answers with
+// status (and a body that echoes the key, which must never reach the agent).
+func failingFront(t *testing.T, ts *httptest.Server, status int) *httptest.Server {
+	t.Helper()
+	target, _ := url.Parse(ts.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if strings.Contains(string(body), `"tools/call"`) {
+				http.Error(w, "upstream said "+r.Header.Get("Authorization"), status)
+				return
+			}
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(front.Close)
+	return front
+}
+
+// A transient HTTP failure reaches the agent with its cause, not as the
+// SDK's bare "rejected by transport", and without the key.
+func TestRunTransientFailureKeepsCause(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{{http.StatusBadGateway, "Bad Gateway"}, {http.StatusTooManyRequests, "Too Many Requests"}} {
+		t.Run(tc.want, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			ts, _ := testServer(t, "k1-secret-value", &mcp.StreamableHTTPOptions{Stateless: true}, nil)
+			front := failingFront(t, ts, tc.status)
+			cs, done, err := agent(t, ctx, Options{URL: front.URL, Headers: map[string]string{"Authorization": "Bearer k1-secret-value"}, Version: "v9"}, nil)
+			require.NoError(t, err)
+			_, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "whoami"})
+			require.ErrorContains(t, err, tc.want)
+			require.NotContains(t, err.Error(), "k1-secret-value")
+			// the session survives a transient failure
+			_, err = cs.ListTools(ctx, nil)
+			require.NoError(t, err)
+			require.NoError(t, cs.Close())
+			require.NoError(t, wait(t, done))
+		})
+	}
+}
+
+// A redirect to another origin is refused: the other origin sees no request
+// (so no headers) and the agent's call fails.
+func TestRunRefusesCrossOriginRedirect(t *testing.T) {
+	var hits int
+	var mu sync.Mutex
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer other.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	gate := make(chan struct{})
-	ts, _ := testServer(t, "k1-secret-value", &mcp.StreamableHTTPOptions{JSONResponse: true}, gate)
-	cs, done, err := agent(t, ctx, Options{URL: ts.URL, Headers: map[string]string{"Authorization": "Bearer k1-secret-value"}, Version: "v9"}, &mcp.ClientSessionOptions{ProtocolVersion: "2025-11-25"})
-	require.NoError(t, err)
-	slow := make(chan string, 1)
-	go func() {
-		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "wait"})
-		if err != nil {
-			slow <- err.Error()
-			return
-		}
-		slow <- res.Content[0].(*mcp.TextContent).Text
-	}()
-	time.Sleep(100 * time.Millisecond) // let the slow call reach the server first
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "whoami"})
-	require.NoError(t, err)
-	require.Equal(t, "key=k1-secret-value", res.Content[0].(*mcp.TextContent).Text)
-	close(gate)
-	require.Equal(t, "released", <-slow)
-	require.NoError(t, cs.Close())
-	require.NoError(t, wait(t, done))
+	_, done, err := agent(t, ctx, Options{URL: origin.URL, Headers: map[string]string{"Authorization": "Bearer k1-secret-value"}, Version: "v9"}, &mcp.ClientSessionOptions{ProtocolVersion: "2025-11-25"})
+	require.Error(t, err)
+	perr := wait(t, done)
+	require.ErrorContains(t, perr, "another origin")
+	require.NotContains(t, perr.Error(), "k1-secret-value")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Zero(t, hits, "the other origin never got a request")
 }
 
 func TestRunRemoteRejectsKey(t *testing.T) {
@@ -310,26 +412,59 @@ func TestBridgeClosesBothSides(t *testing.T) {
 // A call the remote cannot take gets an error response (secrets redacted);
 // a failed initialize also ends the session.
 func TestBridgeFailedCalls(t *testing.T) {
-	local, remote := newFakeConn(), newFakeConn()
-	local.in <- call(7, "tools/list")
-	local.in <- call(8, "initialize")
-	remote.writeErr = func(m jsonrpc.Message) error {
+	secrets := secretsOf(map[string]string{"Authorization": "Bearer secret-token-1"})
+	fail := func(m jsonrpc.Message) error {
 		if r, ok := m.(*jsonrpc.Request); ok {
 			return errors.New(`sending "` + r.Method + `": Bad Gateway for Bearer secret-token-1`)
 		}
 		return nil
 	}
-	err := bridge(context.Background(), local, remote, &session{}, secretsOf(map[string]string{"Authorization": "Bearer secret-token-1"}))
-	require.EqualError(t, err, `initialize: sending "initialize": Bad Gateway for Bearer secret-token-1`, "bridge returns the raw error; Run redacts it")
-	msgs := local.messages()
-	require.Len(t, msgs, 2, "each undelivered call gets an error response")
-	for i, id := range []int64{7, 8} {
-		resp := msgs[i].(*jsonrpc.Response)
+	check := func(t *testing.T, msg jsonrpc.Message, id int64) {
+		t.Helper()
+		resp := msg.(*jsonrpc.Response)
 		want, _ := jsonrpc.MakeID(float64(id))
 		require.Equal(t, want, resp.ID)
 		require.ErrorContains(t, resp.Error, "Bad Gateway for [redacted]")
 		require.NotContains(t, resp.Error.Error(), "secret-token-1")
 	}
+
+	t.Run("call", func(t *testing.T) {
+		local, remote := newFakeConn(), newFakeConn()
+		remote.writeErr = fail
+		local.in <- call(7, "tools/list") // sent concurrently, so the agent stays connected until it is answered
+		done := make(chan error, 1)
+		go func() { done <- bridge(context.Background(), local, remote, &session{}, secrets) }()
+		require.Eventually(t, func() bool { return len(local.messages()) == 1 }, 5*time.Second, 5*time.Millisecond)
+		close(local.in)
+		require.NoError(t, <-done, "an undelivered call does not end the session")
+		check(t, local.messages()[0], 7)
+	})
+
+	t.Run("initialize", func(t *testing.T) {
+		local, remote := newFakeConn(), newFakeConn()
+		remote.writeErr = fail
+		local.in <- call(8, "initialize")
+		err := bridge(context.Background(), local, remote, &session{}, secrets)
+		require.EqualError(t, err, `initialize: sending "initialize": Bad Gateway for Bearer secret-token-1`, "bridge returns the raw error; Run redacts it")
+		require.Len(t, local.messages(), 1)
+		check(t, local.messages()[0], 8)
+	})
+
+	// The SDK's "rejected by transport" sentinel wraps transient statuses and
+	// network failures; the agent gets the whole text, not the sentinel.
+	t.Run("rejected by transport", func(t *testing.T) {
+		local, remote := newFakeConn(), newFakeConn()
+		remote.writeErr = func(m jsonrpc.Message) error {
+			return fmt.Errorf(`sending "tools/call": %w: Bad Gateway for Bearer secret-token-1`, &jsonrpc.Error{Code: -32005, Message: "rejected by transport"})
+		}
+		local.in <- call(9, "tools/call")
+		done := make(chan error, 1)
+		go func() { done <- bridge(context.Background(), local, remote, &session{}, secrets) }()
+		require.Eventually(t, func() bool { return len(local.messages()) == 1 }, 5*time.Second, 5*time.Millisecond)
+		close(local.in)
+		require.NoError(t, <-done)
+		check(t, local.messages()[0], 9)
+	})
 }
 
 func TestRedact(t *testing.T) {

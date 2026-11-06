@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -102,8 +103,11 @@ func (t *headerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 type session struct {
 	mu      sync.Mutex
 	initID  *jsonrpc.ID // the agent's initialize call
-	version string      // protocol version from the initialize result
-	ready   bool        // the agent sent notifications/initialized
+	version string      // negotiated protocol version (initialize result or server/discover)
+	// discovering maps the agent's server/discover calls (the stateless
+	// handshake of protocol 2026-07-28, which has no initialize) to the
+	// protocol version each one asks for.
+	discovering map[jsonrpc.ID]string
 }
 
 func (s *session) protocolVersion() string {
@@ -144,9 +148,11 @@ type bridger struct {
 	calls         sync.WaitGroup // calls being sent concurrently
 }
 
-// up forwards the agent's messages to the remote. Until the agent has sent
-// notifications/initialized every message is sent in order; after that,
-// calls are sent concurrently so a slow call does not hold back the others.
+// up forwards the agent's messages to the remote. Only initialize is sent
+// in order (the server's session, and with it Mcp-Session-Id, starts there);
+// every other call is sent concurrently, so a slow call does not hold back
+// the others or a notifications/cancelled meant for it. Under protocol
+// 2026-07-28 there is no initialize at all (server/discover is stateless).
 func (b *bridger) up(ctx context.Context) error {
 	for {
 		msg, err := b.local.Read(ctx)
@@ -157,16 +163,11 @@ func (b *bridger) up(ctx context.Context) error {
 			return fmt.Errorf("reading from the agent: %w", err)
 		}
 		req, isReq := msg.(*jsonrpc.Request)
-		if isReq && req.IsCall() && req.Method == "initialize" {
-			id := req.ID
-			b.s.mu.Lock()
-			b.s.initID = &id
-			b.s.mu.Unlock()
+		isCall := isReq && req.IsCall()
+		if isCall {
+			b.s.noteCall(req)
 		}
-		b.s.mu.Lock()
-		async := isReq && req.IsCall() && b.s.ready
-		b.s.mu.Unlock()
-		if async {
+		if isCall && req.Method != "initialize" {
 			b.calls.Add(1)
 			go func() {
 				defer b.calls.Done()
@@ -176,11 +177,6 @@ func (b *bridger) up(ctx context.Context) error {
 		}
 		if err := b.send(ctx, msg); err != nil {
 			return err
-		}
-		if isReq && req.Method == "notifications/initialized" {
-			b.s.mu.Lock()
-			b.s.ready = true
-			b.s.mu.Unlock()
 		}
 	}
 }
@@ -198,7 +194,10 @@ func (b *bridger) send(ctx context.Context, msg jsonrpc.Message) error {
 	}
 	werr := &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "whoas: " + redact(err.Error(), b.secrets)}
 	var remoteErr *jsonrpc.Error
-	if errors.As(err, &remoteErr) {
+	// The SDK wraps its "rejected by transport" sentinel (-32005) around
+	// transient HTTP statuses (429, 5xx) and every network failure, so that
+	// error says nothing; the full text names the cause.
+	if errors.As(err, &remoteErr) && remoteErr.Code != errRejectedCode {
 		werr = &jsonrpc.Error{Code: remoteErr.Code, Message: redact(remoteErr.Message, b.secrets), Data: remoteErr.Data}
 	}
 	_ = b.local.Write(context.WithoutCancel(ctx), &jsonrpc.Response{ID: req.ID, Error: werr})
@@ -208,8 +207,60 @@ func (b *bridger) send(ctx context.Context, msg jsonrpc.Message) error {
 	return nil
 }
 
+// errRejectedCode is the code of the SDK's jsonrpc2.ErrRejected sentinel.
+const errRejectedCode = -32005
+
+// noteCall records what the response to a handshake call will tell us.
+func (s *session) noteCall(req *jsonrpc.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch req.Method {
+	case "initialize":
+		id := req.ID
+		s.initID = &id
+	case "server/discover":
+		var p struct {
+			Meta map[string]any `json:"_meta"`
+		}
+		if json.Unmarshal(req.Params, &p) != nil {
+			return
+		}
+		if v, ok := p.Meta[mcp.MetaKeyProtocolVersion].(string); ok {
+			if s.discovering == nil {
+				s.discovering = map[jsonrpc.ID]string{}
+			}
+			s.discovering[req.ID] = v
+		}
+	}
+}
+
+// noteResponse takes the protocol version from the result of the initialize
+// or server/discover call that resp answers.
+func (s *session) noteResponse(resp *jsonrpc.Response) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.initID != nil && *s.initID == resp.ID {
+		var r struct {
+			ProtocolVersion string `json:"protocolVersion"`
+		}
+		if json.Unmarshal(resp.Result, &r) == nil {
+			s.version = r.ProtocolVersion
+		}
+		return
+	}
+	if asked, ok := s.discovering[resp.ID]; ok {
+		delete(s.discovering, resp.ID)
+		var r struct {
+			SupportedVersions []string `json:"supportedVersions"`
+		}
+		if json.Unmarshal(resp.Result, &r) == nil && slices.Contains(r.SupportedVersions, asked) {
+			s.version = asked
+		}
+	}
+}
+
 // down forwards the remote's messages to the agent and records the protocol
-// version from the initialize result.
+// version from the initialize or server/discover result.
 func (b *bridger) down(ctx context.Context) error {
 	for {
 		msg, err := b.remote.Read(ctx)
@@ -220,16 +271,7 @@ func (b *bridger) down(ctx context.Context) error {
 			return err
 		}
 		if resp, ok := msg.(*jsonrpc.Response); ok && resp.Error == nil {
-			b.s.mu.Lock()
-			if b.s.initID != nil && *b.s.initID == resp.ID {
-				var r struct {
-					ProtocolVersion string `json:"protocolVersion"`
-				}
-				if json.Unmarshal(resp.Result, &r) == nil {
-					b.s.version = r.ProtocolVersion
-				}
-			}
-			b.s.mu.Unlock()
+			b.s.noteResponse(resp)
 		}
 		if err := b.local.Write(ctx, msg); err != nil {
 			return nil // the agent is gone
