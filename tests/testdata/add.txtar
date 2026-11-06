@@ -1,0 +1,43 @@
+# AC-01: add captures logins into the vault; the global session is never touched.
+env FAKECLI_LOGIN_AS=global
+exec fakecli login
+snapshot $HOME/.fakecli/auth.json g
+
+exec whoas ls
+stdout 'no identities yet'
+
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work
+stdout 'saved fakecli@work \(account=work\)'
+stderr 'hint: fake hint'
+env FAKECLI_LOGIN_AS=personal
+exec whoas add fakecli personal
+
+exec whoas ls
+stdout 'fakecli@personal\s+account=personal'
+stdout 'fakecli@work\s+account=work'
+! stdout 'tok-'
+unchanged $HOME/.fakecli/auth.json g
+
+# a saved alias is never overwritten
+! exec whoas add fakecli work
+stderr 'already exists'
+
+# unknown provider
+! exec whoas add nope x
+stderr 'unknown provider "nope"'
+
+# import seals the current global session without re-login
+exec whoas import fakecli main
+stdout 'saved fakecli@main \(account=global\)'
+unchanged $HOME/.fakecli/auth.json g
+
+# same account captured twice -> warning
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work2
+stderr 'warning: fakecli@work2 has the same account as fakecli@work'
+
+exec whoas rm fakecli@work2
+stdout 'removed fakecli@work2'
+! exec whoas rm fakecli@work2
+stderr 'identity not found'

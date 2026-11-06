@@ -1,0 +1,135 @@
+# Running CLIs as an identity: AC-02, AC-03, AC-05, AC-07, seal-on-write,
+# signals, crash recovery, and the global session staying untouched.
+env FAKECLI_LOGIN_AS=global
+exec fakecli login
+snapshot $HOME/.fakecli/auth.json g
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work
+env FAKECLI_LOGIN_AS=personal
+exec whoas add fakecli personal
+
+# AC-02: the CLI receives the chosen identity
+exec whoas fakecli@work whoami
+stdout '^account=work$'
+exec whoas fakecli@personal whoami
+stdout '^account=personal$'
+
+# banner (stderr is not a TTY here, so force it)
+env WHOAS_BANNER=always
+exec whoas fakecli@work whoami
+stderr '^whoas: fakecli@work \(account=work\)$'
+env WHOAS_BANNER=
+
+# AC-05: exit codes pass through
+expect-exit 7 whoas fakecli@work exit 7
+
+# AC-07: unknown identity fails before running the CLI
+! exec whoas fakecli@nobody whoami
+stderr 'identity fakecli@nobody not found'
+! stdout .
+expect-exit 125 whoas fakecli@nobody whoami
+
+# no context at all: explicit run without alias is an error
+! exec whoas fakecli whoami
+stderr 'no identity resolved'
+
+# refreshed tokens are sealed back into the vault
+exec whoas fakecli@work refresh token
+stdout '^token=tok-work-1$'
+exec whoas fakecli@work token
+stdout '^token=tok-work-1$'
+
+# AC-03: two identities at the same time
+exec whoas fakecli@work sleep 300 whoami &w&
+exec whoas fakecli@personal sleep 300 whoami &p&
+wait
+stdout 'account=work'
+stdout 'account=personal'
+
+# same identity twice at once shares one overlay, removed afterwards
+exec whoas fakecli@work dir sleep 300 &a&
+exec whoas fakecli@work dir sleep 300 &b&
+wait
+! exists $WORK/run/id/fakecli/work
+! exists $WORK/run/id/fakecli/work.state.json
+
+# non-auth state the CLI writes lands in the shared global dir
+exec whoas fakecli@work setting theme dark
+exists $HOME/.fakecli/settings/theme.txt
+
+# SIGTERM sent to whoas is forwarded to the CLI
+! exec whoas fakecli@work trap &t&
+sleep 1s
+sigterm-bg
+wait
+stdout 'trapped=TERM'
+
+# kill -9 of whoas mid-run: the next run recovers with the refreshed token
+! exec whoas fakecli@work refresh sleep 1500 &k&
+sleep 500ms
+kill -KILL k
+wait
+exec whoas fakecli@work token
+stdout '^token=tok-work-2$'
+
+# rm refuses an identity while a run is using it
+exec whoas fakecli@work sleep 1500 &h&
+sleep 500ms
+! exec whoas rm fakecli@work
+stderr 'fakecli@work is in use by pid'
+wait
+
+# env vars that would override the identity are removed from the CLI's env
+env FAKECLI_TOKEN=global-override
+exec fakecli whoami
+stdout '^account=envtoken$'
+exec whoas fakecli@work whoami
+stdout '^account=work$'
+env FAKECLI_TOKEN=
+
+# the global session was never modified
+unchanged $HOME/.fakecli/auth.json g
+exec fakecli whoami
+stdout '^account=global$'
+
+# WHOAS_DEPTH guards against shim loops
+env WHOAS_DEPTH=8
+expect-exit 125 whoas fakecli@work whoami
+stderr 'WHOAS_DEPTH limit reached'
+env WHOAS_DEPTH=
+
+# CLI not on PATH -> 127
+expect-exit 127 whoas ghost@x whoami
+stderr 'CLI not found'
+
+# CLI found but cannot be executed -> 126
+chmod 755 bin2/brokencli
+env PATH=$WORK/bin2:$PATH
+exec whoas import broken x
+expect-exit 126 whoas broken@x anything
+stderr 'start failed'
+
+-- cfg/adapters/ghost.toml --
+name = "ghost"
+bin  = "ghostcli"
+kind = "dir-overlay"
+[dir]
+global     = "{home}/.ghost"
+inject     = { env = { GHOST_DIR = "{dir}" } }
+auth_files = ["a.json"]
+[login]
+cmd = ["ghostcli", "login"]
+-- cfg/adapters/broken.toml --
+name = "broken"
+bin  = "brokencli"
+kind = "dir-overlay"
+[dir]
+global     = "{home}/.broken"
+inject     = { env = { BROKEN_DIR = "{dir}" } }
+auth_files = ["a.json"]
+[login]
+cmd = ["brokencli", "login"]
+-- home/.broken/a.json --
+{"t":"x"}
+-- bin2/brokencli --
+#!/nonexistent/interpreter

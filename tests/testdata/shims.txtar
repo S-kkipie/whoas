@@ -1,0 +1,96 @@
+# Shims give nested and agent-launched CLI calls the right identity.
+env FAKECLI_LOGIN_AS=global
+exec fakecli login
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work
+exec whoas profile set work fakecli@work
+
+exec whoas shims install
+stdout '^shims: .*fakecli'
+stdout 'export PATH='
+exists $WORK/data/shims/fakecli
+
+# a shim with nothing resolved is the real CLI on the global session
+env PATH=$WORK/data/shims:$PATH
+exec fakecli whoami
+stdout '^account=global$'
+
+# WHOAS_PROFILE makes the shim supervise as the profile's identity
+env WHOAS_PROFILE=work
+exec fakecli whoami
+stdout '^account=work$'
+env WHOAS_PROFILE=
+
+# an untrusted project file only warns through a shim
+cd proj
+exec fakecli whoami
+stdout '^account=global$'
+stderr 'warning: .*not trusted'
+cd $WORK
+
+# a hostile .whoas.yaml never breaks a shim: a directory is skipped, and a
+# file whoas cannot use (here: a corrupt trust store) only warns
+mkdir hostile/.whoas.yaml
+cd hostile
+exec fakecli whoami
+stdout '^account=global$'
+cd $WORK
+cp corrupt-trust.json $WORK/data/trust.json
+cd proj
+exec fakecli whoami
+stdout '^account=global$'
+stderr 'warning: .*trust\.json'
+cd $WORK
+rm $WORK/data/trust.json
+
+# whoas run: every nested call goes through the shims with the profile
+exec whoas run -p work -- sh -c 'fakecli whoami'
+stdout '^account=work$'
+! exec whoas run -p nope -- true
+stderr 'unknown profile "nope"'
+expect-exit 125 whoas run -p nope -- true
+expect-exit 3 whoas run -- sh -c 'exit 3'
+
+# whoas run takes a command given by path, as is
+chmod 755 tool.sh
+exec whoas run -p work -- ./tool.sh
+stdout '^account=work$'
+expect-exit 127 whoas run -- ./missing.sh
+
+# whoas's own failures in run exit 125
+env WHOAS_CONFIG_DIR=$WORK/badcfg
+expect-exit 125 whoas run -- true
+env WHOAS_CONFIG_DIR=$WORK/cfg
+
+# a pre-set WHOAS_PROFILE is replaced, not duplicated, by run -p
+env WHOAS_PROFILE=nope
+exec whoas run -p work -- sh -c 'fakecli whoami'
+stdout '^account=work$'
+env WHOAS_PROFILE=
+
+exec whoas shims ls
+stdout '^fakecli$'
+
+# foreign entries in the shims dir are left alone
+rm $WORK/data/shims/fakecli
+symlink $WORK/data/shims/fakecli -> /bin/true
+exec whoas shims install
+stderr 'skipping'
+exec whoas shims ls
+! stdout '^fakecli$'
+rm $WORK/data/shims/fakecli
+exec whoas shims install
+
+exec whoas shims uninstall
+stdout 'removed [0-9]+ shims'
+! exists $WORK/data/shims/fakecli
+
+-- proj/.whoas.yaml --
+profile: work
+-- corrupt-trust.json --
+{not json
+-- tool.sh --
+#!/bin/sh
+exec fakecli whoami
+-- badcfg/config.yaml --
+profiles: [

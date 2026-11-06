@@ -1,0 +1,63 @@
+# A crashed run's overlay never resurrects a removed identity, and never
+# swaps the account of an alias that was removed and saved again.
+env FAKECLI_LOGIN_AS=global
+exec fakecli login
+env FAKECLI_LOGIN_AS=old
+exec whoas add fakecli work
+
+# crash: the overlay holds another account's session, its holder is dead
+# and the recorded hash is stale
+mkdir $WORK/run/id/fakecli/work
+cp crash/auth.json $WORK/run/id/fakecli/work/auth.json
+cp crash/state.json $WORK/run/id/fakecli/work.state.json
+
+# rm drops the crashed overlay with the identity; doctor does not bring it back
+exec whoas rm fakecli@work
+stdout 'removed fakecli@work'
+! exists $WORK/run/id/fakecli/work
+! exists $WORK/run/id/fakecli/work.state.json
+exec whoas doctor
+exec whoas ls
+! stdout 'fakecli@work'
+
+# add under the same alias saves (and runs) the new account even when a
+# crashed overlay is still there
+mkdir $WORK/run/id/fakecli/work
+cp crash/auth.json $WORK/run/id/fakecli/work/auth.json
+cp crash/state.json $WORK/run/id/fakecli/work.state.json
+env FAKECLI_LOGIN_AS=new
+exec whoas add fakecli work
+stdout 'saved fakecli@work \(account=new\)'
+! exists $WORK/run/id/fakecli/work
+! exists $WORK/run/id/fakecli/work.state.json
+exec whoas fakecli@work whoami
+stdout '^account=new$'
+
+# import does the same
+exec whoas rm fakecli@work
+mkdir $WORK/run/id/fakecli/work
+cp crash/auth.json $WORK/run/id/fakecli/work/auth.json
+cp crash/state.json $WORK/run/id/fakecli/work.state.json
+exec whoas import fakecli work
+stdout 'saved fakecli@work \(account=global\)'
+! exists $WORK/run/id/fakecli/work
+exec whoas fakecli@work whoami
+stdout '^account=global$'
+
+# add and import refuse an alias a live process is using
+mkdir $WORK/run/id/fakecli/busy
+cp live/state.json $WORK/run/id/fakecli/busy.state.json
+! exec whoas add fakecli busy
+stderr 'fakecli@busy is in use by pid \[1\]'
+! exec whoas import fakecli busy
+stderr 'fakecli@busy is in use by pid \[1\]'
+exists $WORK/run/id/fakecli/busy
+exec whoas ls
+! stdout 'fakecli@busy'
+
+-- crash/auth.json --
+{"account":"crashed","gen":1,"token":"tok-crashed-1"}
+-- crash/state.json --
+{"holders":[2147483647],"hash":"stale"}
+-- live/state.json --
+{"holders":[1],"hash":"stale"}

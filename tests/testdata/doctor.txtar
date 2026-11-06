@@ -1,0 +1,59 @@
+# providers, doctor, agent lifecycle; AC-06: no secret ever printed.
+exec whoas providers
+stdout '^gh\s+gh\s+dir-overlay'
+stdout '^fakecli\s+fakecli\s+dir-overlay\s+\S*fakecli$'
+
+exec whoas doctor
+stdout '^keystore\s+env \(WHOAS_MASTER_KEY\)$'
+stdout '^vault\s+not initialized$'
+stdout '^agent\s+not running$'
+
+env FAKECLI_LOGIN_AS=work
+exec whoas add fakecli work
+exec whoas doctor
+stdout '^vault\s+initialized$'
+stdout '^recovered\s+0 stale overlay'
+
+# doctor sweeps capture dirs left by add/import runs that died
+mkdir run/capture/fakecli/ghost-2147483647
+exec whoas doctor
+stdout '^captures\s+removed 1 stale capture dir'
+! exists run/capture/fakecli/ghost-2147483647
+
+# agent: start, unlock, use, lock
+exec whoas agent &ag&
+wait-exists $WORK/run/agent.sock
+exec whoas unlock
+stdout '^unlocked \(env'
+exec whoas doctor
+stdout '^agent\s+running \(unlocked\)$'
+exec whoas fakecli@work whoami
+stdout '^account=work$'
+
+# an unlocked agent serves runs without consulting the keystore at all
+# (an unusable WHOAS_KEYSTORE would fail keystore selection)
+env SAVED_KEY=$WHOAS_MASTER_KEY
+env WHOAS_MASTER_KEY=
+env WHOAS_KEYSTORE=nope
+exec whoas fakecli@work whoami
+stdout '^account=work$'
+env WHOAS_KEYSTORE=
+env WHOAS_MASTER_KEY=$SAVED_KEY
+
+exec whoas lock
+stdout '^locked$'
+exec whoas doctor
+stdout '^agent\s+running \(locked\)$'
+kill -INT ag
+wait
+
+# AC-06: nothing whoas prints contains a token or the master key,
+# and sealed blobs are not plaintext.
+exec whoas ls
+! stdout 'tok-|AGE-SECRET-KEY'
+exec whoas doctor
+! stdout 'tok-|AGE-SECRET-KEY'
+exec whoas which fakecli@work
+! stdout 'tok-|AGE-SECRET-KEY'
+! grep 'tok-' $WORK/data/vault/fakecli/work.age
+! grep 'tok-' $WORK/data/vault/fakecli/work.meta.json

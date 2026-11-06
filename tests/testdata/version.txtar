@@ -1,0 +1,3 @@
+# whoas version prints the build version.
+exec whoas version
+stdout '^whoas dev$'

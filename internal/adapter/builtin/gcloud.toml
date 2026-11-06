@@ -1,0 +1,23 @@
+name = "gcloud"
+bin  = "gcloud"
+kind = "dir-overlay"
+unset_env = ["CLOUDSDK_CORE_ACCOUNT", "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE", "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"]
+
+[dir]
+global = "{home}/.config/gcloud"
+inject = { env = { CLOUDSDK_CONFIG = "{dir}" } }
+auth_files = [
+  "credentials.db",
+  "access_tokens.db",
+  "legacy_credentials",
+  "configurations",
+  "active_config",
+  "application_default_credentials.json",
+]
+
+[login]
+cmd  = ["gcloud", "auth", "login"]
+hint = "Pick the Google account in the browser window that opens."
+
+[whoami]
+cmd = ["gcloud", "config", "get-value", "account"]

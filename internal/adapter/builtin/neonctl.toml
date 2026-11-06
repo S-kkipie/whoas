@@ -1,0 +1,17 @@
+name = "neonctl"
+bin  = "neonctl"
+kind = "dir-overlay"
+unset_env = ["NEON_API_KEY"]
+
+[dir]
+global     = "{xdg_config}/neonctl"
+# neonctl has no env var for its config dir, only this global flag.
+inject     = { flag = ["--config-dir", "{dir}"] }
+auth_files = ["credentials.json"]
+
+[login]
+cmd = ["neonctl", "auth"]
+
+[whoami]
+cmd  = ["neonctl", "me", "--output", "json"]
+json = "email"

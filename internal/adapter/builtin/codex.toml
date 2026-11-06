@@ -1,0 +1,14 @@
+name = "codex"
+bin  = "codex"
+kind = "dir-overlay"
+
+[dir]
+global     = "{home}/.codex"
+inject     = { env = { CODEX_HOME = "{dir}" } }
+auth_files = ["auth.json"]
+
+[login]
+cmd = ["codex", "login"]
+
+[whoami]
+cmd = ["codex", "login", "status"]
