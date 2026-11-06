@@ -64,6 +64,7 @@ M2 forbade `login.cmd` on `env-token` adapters. M3 allows it.
 - **Run** (explicit `whoas claude@max`, a `claude` shim with a profile or `.whoas.yaml`, `whoas run`): the M2 env-token path (`RunEnv`). Concurrent sessions with different accounts work, since there is no lock.
 - **No identity for `claude` in the chosen source:** the shim passes through to the user's normal login (M1 rule).
 - **`whoas doctor`:** warns when `settings.json` (in `$CLAUDE_CONFIG_DIR` or `~/.claude`) sets `apiKeyHelper`. An `apiKeyHelper` outranks the token and cannot be cleared from the environment.
+  - It also warns when that file's `env` object sets `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` or any `CLAUDE_CODE_USE_*`: Claude Code applies that block over the environment whoas prepared. Key names only, never values; a file that is not valid JSON is skipped.
 
 ## MCP servers (any agent)
 

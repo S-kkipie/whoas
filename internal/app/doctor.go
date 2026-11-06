@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -64,9 +66,7 @@ func newDoctorCmd() *cobra.Command {
 				fmt.Fprintln(tw, "agent\trunning (unlocked)")
 			}
 			fmt.Fprintf(tw, "shims\t%s (in PATH: %t)\n", e.dirs.ShimsDir(), inPath(e.dirs.ShimsDir()))
-			for _, p := range claudeKeyHelpers(e.dirs.Home, os.Getenv("CLAUDE_CONFIG_DIR")) {
-				fmt.Fprintf(tw, "claude\twarning: %s sets apiKeyHelper, which outranks the token of every claude identity and cannot be unset from the environment\n", p)
-			}
+			printClaudeWarnings(tw, e.dirs.Home, os.Getenv("CLAUDE_CONFIG_DIR"))
 			if n, err := sweepCaptures(filepath.Join(e.dirs.Runtime, "capture")); err != nil {
 				fmt.Fprintf(tw, "captures\terror: %v\n", err)
 			} else {
@@ -85,15 +85,34 @@ func newDoctorCmd() *cobra.Command {
 	}
 }
 
-// claudeKeyHelpers returns the Claude Code settings files (in configDir, the
-// value of $CLAUDE_CONFIG_DIR, and in ~/.claude) that set apiKeyHelper. The
-// helper's command is never printed.
-func claudeKeyHelpers(home, configDir string) []string {
+// printClaudeWarnings reports what Claude Code's settings files set that
+// outranks or overrides a claude identity's environment: an apiKeyHelper,
+// and env entries for the variables whoas removes or injects. It prints
+// names only, never a helper's command or an env value.
+func printClaudeWarnings(w io.Writer, home, configDir string) {
+	for _, p := range claudeKeyHelpers(home, configDir) {
+		fmt.Fprintf(w, "claude\twarning: %s sets apiKeyHelper, which outranks the token of every claude identity and cannot be unset from the environment\n", p)
+	}
+	for _, o := range claudeEnvOverrides(home, configDir) {
+		fmt.Fprintf(w, "claude\twarning: %s sets env %s; Claude Code applies it over the identity's environment\n", o.Path, strings.Join(o.Keys, ", "))
+	}
+}
+
+// claudeSettingsFile is a Claude Code settings file that holds valid JSON.
+type claudeSettingsFile struct {
+	path string
+	data []byte
+}
+
+// claudeSettings reads settings.json in configDir (the value of
+// $CLAUDE_CONFIG_DIR) and in ~/.claude, each once. Missing or unreadable
+// files and files that are not valid JSON are skipped.
+func claudeSettings(home, configDir string) []claudeSettingsFile {
 	dirs := []string{filepath.Join(home, ".claude")}
 	if configDir != "" {
 		dirs = []string{configDir, dirs[0]}
 	}
-	var out []string
+	var out []claudeSettingsFile
 	seen := map[string]bool{}
 	for _, d := range dirs {
 		p := filepath.Join(d, "settings.json")
@@ -102,14 +121,64 @@ func claudeKeyHelpers(home, configDir string) []string {
 		}
 		seen[p] = true
 		data, err := os.ReadFile(p)
-		if err != nil {
+		if err != nil || !gjson.ValidBytes(data) {
 			continue
 		}
-		if v := gjson.GetBytes(data, "apiKeyHelper"); v.Exists() && v.String() != "" {
-			out = append(out, p)
+		out = append(out, claudeSettingsFile{path: p, data: data})
+	}
+	return out
+}
+
+// claudeKeyHelpers returns the Claude Code settings files that set
+// apiKeyHelper. The helper's command is never printed.
+func claudeKeyHelpers(home, configDir string) []string {
+	var out []string
+	for _, f := range claudeSettings(home, configDir) {
+		if v := gjson.GetBytes(f.data, "apiKeyHelper"); v.Exists() && v.String() != "" {
+			out = append(out, f.path)
 		}
 	}
 	return out
+}
+
+// claudeEnvOverride is a settings file whose env block sets variables that a
+// claude identity removes or injects. Claude Code writes that block into its
+// own environment over the inherited values, so it brings them back.
+type claudeEnvOverride struct {
+	Path string
+	Keys []string // names only, in file order
+}
+
+// claudeEnvOverrides returns the Claude Code settings files whose env object
+// sets ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN or a
+// CLAUDE_CODE_USE_* provider switch.
+func claudeEnvOverrides(home, configDir string) []claudeEnvOverride {
+	var out []claudeEnvOverride
+	for _, f := range claudeSettings(home, configDir) {
+		env := gjson.GetBytes(f.data, "env")
+		if !env.IsObject() {
+			continue
+		}
+		var keys []string
+		env.ForEach(func(k, _ gjson.Result) bool {
+			if name := k.String(); overridesClaudeIdentity(name) && !slices.Contains(keys, name) {
+				keys = append(keys, name)
+			}
+			return true
+		})
+		if len(keys) > 0 {
+			out = append(out, claudeEnvOverride{Path: f.path, Keys: keys})
+		}
+	}
+	return out
+}
+
+func overridesClaudeIdentity(name string) bool {
+	switch name {
+	case "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN":
+		return true
+	}
+	return strings.HasPrefix(name, "CLAUDE_CODE_USE_")
 }
 
 // recoverAll seals and removes overlays whose holders all died.

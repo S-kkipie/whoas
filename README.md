@@ -302,12 +302,16 @@ With shims (or `whoas run`), a plain `claude` in a repo whose `.whoas.yaml` says
 `claude: team` runs as `claude@team`; where no identity applies it passes
 through to your normal `/login`, which whoas never touches.
 
-- `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and the provider switches
-  `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`,
-  `CLAUDE_CODE_USE_ANTHROPIC_AWS` and `CLAUDE_CODE_USE_MANTLE` are removed from
-  the session: they outrank the token or send requests to another provider.
-  An `apiKeyHelper` in `settings.json` outranks it too and cannot be removed from
-  the environment; `whoas doctor` warns when one is set.
+- whoas removes `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and the provider
+  switches `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`,
+  `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CODE_USE_ANTHROPIC_AWS` and
+  `CLAUDE_CODE_USE_MANTLE` from Claude's environment: they outrank the token or
+  send requests to another provider. Claude Code applies the `env` block of a
+  `settings.json` over its environment, so an entry there brings them back (or
+  replaces `CLAUDE_CODE_OAUTH_TOKEN`), and an `apiKeyHelper` there outranks the
+  token without any variable. `whoas doctor` warns about both in the user-level
+  settings files (`~/.claude/settings.json` and `$CLAUDE_CONFIG_DIR/settings.json`),
+  naming the variables, never their values.
 - A token session can only make model requests: no Remote Control and no
   claude.ai connectors (locally configured MCP servers work). Running `/login`
   inside it switches that session to the login.
