@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/S-kkipie/whoas/internal/adapter"
@@ -126,9 +127,7 @@ func (p *Plan) leave(ctx context.Context) error {
 	st.Remove(os.Getpid())
 	st.Prune()
 	if len(st.Holders) == 0 {
-		if err := overlay.Promote(p.RunBase, p.Global, p.Adapter.Dir.AuthFiles); err != nil {
-			fmt.Fprintf(p.Stderr, "whoas: warning: could not share new non-auth files: %v\n", err)
-		}
+		promote(p.RunBase, p.Global, p.Adapter, p.Ref, p.Stderr)
 		if err := overlay.Remove(p.RunBase); err != nil {
 			return err
 		}
@@ -167,10 +166,20 @@ func recoverStale(dir, global string, a *adapter.Adapter, r ref.Ref, v *vault.Va
 			return false, err
 		}
 	}
-	if err := overlay.Promote(dir, global, a.Dir.AuthFiles); err != nil {
+	promote(dir, global, a, r, warn)
+	return true, overlay.Remove(dir)
+}
+
+// promote shares the overlay's new non-auth files and warns about mirrored
+// entries that were replaced during the run (their change is lost).
+func promote(dir, global string, a *adapter.Adapter, r ref.Ref, warn io.Writer) {
+	replaced, err := overlay.Promote(dir, global, a.Dir.AuthFiles)
+	for _, name := range replaced {
+		fmt.Fprintf(warn, "whoas: warning: %s: %s was replaced during the run; the change was not copied to %s\n", r, name, filepath.Join(global, filepath.FromSlash(name)))
+	}
+	if err != nil {
 		fmt.Fprintf(warn, "whoas: warning: could not share new non-auth files: %v\n", err)
 	}
-	return true, overlay.Remove(dir)
 }
 
 // Recover cleans up r's overlay if every holder is dead. It reports whether

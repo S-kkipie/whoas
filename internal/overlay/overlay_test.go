@@ -95,7 +95,9 @@ func TestPromote(t *testing.T) {
 	write(t, filepath.Join(dir, "settings", "theme.txt"), "dark")
 	write(t, filepath.Join(dir, ".w", "fresh.txt"), "in-ancestor")
 
-	require.NoError(t, Promote(dir, g, auth))
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Empty(t, replaced)
 	require.Equal(t, "created-by-cli", read(t, filepath.Join(g, "new.txt")))
 	require.Equal(t, "dark", read(t, filepath.Join(g, "settings", "theme.txt")))
 	require.Equal(t, "in-ancestor", read(t, filepath.Join(g, ".w", "fresh.txt")))
@@ -107,8 +109,41 @@ func TestPromoteKeepsExistingGlobal(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "ov")
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	write(t, filepath.Join(dir, "a.txt"), "overlay-version")
-	require.NoError(t, Promote(dir, g, auth))
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
 	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+}
+
+// A tool that saves a dotfile by writing a new file and renaming it over the
+// mirrored symlink replaces the link inside the overlay: Promote keeps the
+// global entry and reports the lost change.
+func TestPromoteReportsReplacedMirroredEntries(t *testing.T) {
+	g := globalFixture(t)
+	dir := filepath.Join(t.TempDir(), "ov")
+	require.NoError(t, Build(dir, g, auth, map[string]envelope.File{
+		"auth.json":              {Data: []byte("id")},
+		".w/config/default.toml": {Data: []byte("id-toml")},
+	}))
+	renameOver := func(rel, body string) {
+		tmp := filepath.Join(dir, rel+".lock")
+		write(t, tmp, body)
+		require.NoError(t, os.Rename(tmp, filepath.Join(dir, rel)))
+	}
+	renameOver("a.txt", "edited")                          // mirrored top-level symlink
+	renameOver(filepath.Join(".w", "other.txt"), "edited") // mirrored symlink inside an auth parent
+	renameOver("auth.json", "refreshed")                   // auth file: sealed, never reported
+	renameOver(filepath.Join(".w", "config", "default.toml"), "refreshed")
+	write(t, filepath.Join(dir, "fresh.txt"), "new") // new entry: promoted
+
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{".w/other.txt", "a.txt"}, replaced)
+	require.True(t, isLink(t, filepath.Join(dir, "sub")), "untouched symlink")
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")), "not copied back")
+	require.Equal(t, "w-other", read(t, filepath.Join(g, ".w", "other.txt")))
+	require.Equal(t, "global-auth", read(t, filepath.Join(g, "auth.json")))
+	require.Equal(t, "new", read(t, filepath.Join(g, "fresh.txt")))
 }
 
 func TestPromoteCrossDevice(t *testing.T) {
@@ -117,9 +152,10 @@ func TestPromoteCrossDevice(t *testing.T) {
 	g := t.TempDir()
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "settings", "k.txt"), "v")
-	require.NoError(t, Promote(dir, g, auth))
+	_, err := Promote(dir, g, auth)
+	require.NoError(t, err)
 	require.Equal(t, "v", read(t, filepath.Join(g, "settings", "k.txt")))
-	_, err := os.Stat(filepath.Join(dir, "settings"))
+	_, err = os.Stat(filepath.Join(dir, "settings"))
 	require.True(t, os.IsNotExist(err))
 	// Ensure no temporary files remain.
 	entries, err := os.ReadDir(g)
@@ -186,7 +222,7 @@ func TestPromoteNonEXDEVErrorIsReturned(t *testing.T) {
 	g := t.TempDir()
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "settings", "k.txt"), "v")
-	err := Promote(dir, g, auth)
+	_, err := Promote(dir, g, auth)
 	require.Error(t, err)
 	// Source file must still exist after the error.
 	require.Equal(t, "v", read(t, filepath.Join(dir, "settings", "k.txt")))

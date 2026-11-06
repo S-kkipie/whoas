@@ -73,6 +73,11 @@ config.
 ⚗️ **experimental:** works, with a known gap — commands started by `railway run`
 also see the overlay `HOME`. The banner and `whoas providers` mark it.
 
+**Root overlays** (`railway`: all of `~`; `wrangler`: all of `~/.config`): tools
+that save a dotfile by writing a new file and renaming it — `git config --global`,
+some shells' history — lose that change inside a root overlay; whoas warns when
+it happens (`whoas: warning: railway@work: .gitconfig was replaced during the run; …`).
+
 **wrangler:** a legacy `~/.wrangler` directory wins over `$XDG_CONFIG_HOME` in
 wrangler and would bypass the overlay, so whoas refuses to add or run wrangler
 identities while it exists. Move it once: `mv ~/.wrangler ~/.config/.wrangler`.
@@ -373,6 +378,8 @@ dir (whoas refuses to add or run while one exists).
 **A whole root as the overlay.** If the CLI only honours `$HOME` or `$XDG_*`, set
 `global` to exactly `{home}`, `{xdg_config}` or `{xdg_data}` and inject the
 matching variable — `HOME`, `XDG_CONFIG_HOME` or `XDG_DATA_HOME` — as `"{dir}"`.
+Changes made by renaming a new file over an existing entry stay in the overlay
+and are lost (whoas warns), so prefer a sub-directory overlay when the CLI allows it.
 
 **API-token CLIs** use `kind = "env-token"` and declare their env vars instead of a `[dir]`:
 
