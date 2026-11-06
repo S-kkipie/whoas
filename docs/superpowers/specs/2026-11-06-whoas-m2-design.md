@@ -130,6 +130,7 @@ Tip, documented: any credential the CLI writes **during a run** is captured, so 
   - Hidden prompt and `--stdin` helpers.
   - Docker helper warning.
   - `providers --all`.
+  - The banner appends ` [experimental]` for experimental adapters.
 
 ## Testing
 - e2e (testscript), using extra copies of the fake CLI under other names (bins must be unique):
