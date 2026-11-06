@@ -93,9 +93,10 @@ Validation:
 - **Run** (explicit, shim, `run`):
   - Same resolution, trust, depth and exit codes as M1.
   - Decrypt (agent first) → child env = `base − unset_env − secret envs + ENV=value…` → spawn.
+  - A required secret missing from the identity (e.g. sealed by an older dir-overlay adapter of the same name) fails before spawning, exit 125: `whoas: <ref>: identity has no <ENV>; re-add it with whoas add <provider> <alias>`.
   - **No overlay, lock or seal-on-write** (tokens are static).
   - Signals and exit status go through the same supervisor helper.
-- **`whoas ls`**: ACTIVE shows `-` (no holders). **`rm`**: no lock needed.
+- **`whoas ls`**: ACTIVE shows `-` (no holders). **`rm`**: no lock needed. **`doctor`** skips env-token adapters when recovering overlays.
 - **Secrets** live only in the vault and the child's env, never in argv, stdout/stderr or logs.
 
 ## Built-in adapters added

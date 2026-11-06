@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/S-kkipie/whoas/internal/adapter"
@@ -25,6 +26,8 @@ type EnvPlan struct {
 }
 
 // RunEnv decrypts the identity's secrets and runs the CLI with them injected.
+// It refuses to start when a required secret is missing from the identity:
+// the CLI would silently fall back to its own login or an ambient variable.
 func RunEnv(ctx context.Context, p EnvPlan) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -33,5 +36,11 @@ func RunEnv(ctx context.Context, p EnvPlan) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	return spawnCmd(p.Bin, p.Args, p.Adapter.SecretEnv(p.Env, env.Secrets()), p.Stdin, p.Stdout, p.Stderr)
+	secrets := env.Secrets()
+	for _, s := range p.Adapter.Secrets {
+		if !s.Optional && secrets[s.Env] == "" {
+			return Result{}, fmt.Errorf("%s: identity has no %s; re-add it with whoas add %s %s", p.Ref, s.Env, p.Ref.Provider, p.Ref.Alias)
+		}
+	}
+	return spawnCmd(p.Bin, p.Args, p.Adapter.SecretEnv(p.Env, secrets), p.Stdin, p.Stdout, p.Stderr)
 }

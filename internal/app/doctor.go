@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/agent"
 	"github.com/S-kkipie/whoas/internal/ref"
 	"github.com/S-kkipie/whoas/internal/runlock"
@@ -97,8 +98,8 @@ func recoverAll(e *env, v *vault.Vault) (int, error) {
 		}
 		r := ref.Ref{Provider: filepath.ToSlash(filepath.Dir(rel)), Alias: filepath.Base(rel)}
 		a, ok := e.registry.Get(r.Provider)
-		if !ok {
-			return nil
+		if !ok || a.Kind != adapter.KindDirOverlay {
+			return nil // env-token runs have no overlay to recover
 		}
 		found, err := supervisor.Recover(context.Background(), base, a.GlobalDir(e.vars()), a, r, v)
 		if found {
