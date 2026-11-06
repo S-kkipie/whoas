@@ -17,3 +17,12 @@ func TestHash(t *testing.T) {
 	d := map[string]File{"a.json": {Mode: 0o644, Data: []byte("1")}, "dir/b": {Mode: 0o600, Data: []byte("2")}}
 	require.NotEqual(t, Hash(a), Hash(d), "mode sensitive")
 }
+
+func TestSecretsRoundTrip(t *testing.T) {
+	e := FromSecrets("tok", map[string]string{"TOK_KEY": "k1", "TOK_HOST": ""})
+	require.Equal(t, map[string]File{"env/TOK_KEY": {Mode: 0o600, Data: []byte("k1")}}, e.Files)
+	require.Equal(t, map[string]string{"TOK_KEY": "k1"}, e.Secrets())
+
+	other := New("gh", map[string]File{"hosts.yml": {Data: []byte("x")}})
+	require.Empty(t, other.Secrets())
+}

@@ -5,6 +5,7 @@ package supervisor
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,16 +15,21 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// spawn runs the real CLI and waits. SIGTERM/SIGHUP are always forwarded.
+// spawn runs the real CLI pointed at the overlay.
+func (p *Plan) spawn() (Result, error) {
+	argv := append(p.Adapter.InjectArgs(p.RunBase), p.Args...)
+	return spawnCmd(p.Bin, argv, p.Adapter.ChildEnv(p.Env, p.RunBase), p.Stdin, p.Stdout, p.Stderr)
+}
+
+// spawnCmd runs bin and waits. SIGTERM/SIGHUP are always forwarded.
 // SIGINT/SIGQUIT are forwarded only when whoas is not in a terminal's
 // foreground process group; otherwise the terminal already delivered them
 // to the child and forwarding would double them.
-func (p *Plan) spawn() (Result, error) {
+func spawnCmd(bin string, argv, env []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
 	forwardAll := !terminalDelivers()
-	argv := append(p.Adapter.InjectArgs(p.RunBase), p.Args...)
-	cmd := exec.Command(p.Bin, argv...)
-	cmd.Env = p.Adapter.ChildEnv(p.Env, p.RunBase)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = p.Stdin, p.Stdout, p.Stderr
+	cmd := exec.Command(bin, argv...)
+	cmd.Env = env
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 
 	sigs := make(chan os.Signal, 4)
 	var watch []os.Signal
@@ -38,7 +44,7 @@ func (p *Plan) spawn() (Result, error) {
 	defer signal.Stop(sigs)
 
 	if err := cmd.Start(); err != nil {
-		return Result{}, fmt.Errorf("%w: %s: %w", ErrStart, p.Bin, err)
+		return Result{}, fmt.Errorf("%w: %s: %w", ErrStart, bin, err)
 	}
 	waited := make(chan struct{})
 	go func() {
