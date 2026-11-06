@@ -1,0 +1,15 @@
+name = "docker"
+bin  = "docker"
+kind = "dir-overlay"
+
+[dir]
+global      = "{home}/.docker"
+inject      = { env = { DOCKER_CONFIG = "{dir}" } }
+auth_files  = ["config.json"]
+# Registries listed under these keys keep their credentials in a helper's own
+# store, outside whoas.
+helper_keys = ["credsStore", "credHelpers"]
+
+[login]
+cmd  = ["docker", "login"]
+hint = "This logs in to Docker Hub; for another registry run: whoas docker@<alias> login <registry>"

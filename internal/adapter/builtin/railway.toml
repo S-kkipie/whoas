@@ -1,0 +1,20 @@
+name         = "railway"
+bin          = "railway"
+kind         = "dir-overlay"
+experimental = true
+unset_env    = ["RAILWAY_TOKEN", "RAILWAY_API_TOKEN"]
+
+[dir]
+# railway resolves ~/.railway from $HOME, so the overlay root is all of ~.
+# Commands started by `railway run` see the overlay HOME as well.
+global     = "{home}"
+inject     = { env = { HOME = "{dir}" } }
+auth_files = [".railway/config.json"]
+
+[login]
+cmd  = ["railway", "login"]
+hint = "If your browser is signed in to another Railway account, switch accounts there first."
+
+[whoami]
+cmd  = ["railway", "whoami", "--json"]
+json = "email"

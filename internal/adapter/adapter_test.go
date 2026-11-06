@@ -28,7 +28,11 @@ json = "user.email"
 func TestBuiltinsLoad(t *testing.T) {
 	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
 	require.NoError(t, err)
-	require.Equal(t, []string{"codex", "gcloud", "gh", "neonctl"}, r.Names())
+	for _, n := range []string{"codex", "docker", "gcloud", "gh", "neonctl", "railway", "vercel", "wrangler"} {
+		_, ok := r.Get(n)
+		require.True(t, ok, n)
+		require.Equal(t, "builtin", r.Source(n), n)
+	}
 	gh, ok := r.ByBin("gh")
 	require.True(t, ok)
 	require.Equal(t, []string{"GH_CONFIG_DIR=/o"}, gh.InjectEnv("/o"))
@@ -239,4 +243,28 @@ func TestRegistrySource(t *testing.T) {
 	require.Equal(t, "user", r.Source("tok"))
 	require.Equal(t, "builtin", r.Source("gh"))
 	require.Equal(t, "", r.Source("nope"))
+}
+
+func TestDirOverlayBuiltins(t *testing.T) {
+	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
+	require.NoError(t, err)
+	v := Vars{Home: "/h", XDGConfig: "/h/.config", XDGData: "/h/.local/share"}
+
+	vercel, _ := r.Get("vercel")
+	require.Equal(t, "/h/.local/share/com.vercel.cli", vercel.GlobalDir(v))
+	require.Equal(t, []string{"--global-config", "/o"}, vercel.InjectArgs("/o"))
+	require.Equal(t, []string{"auth.json", "config.json"}, vercel.Dir.AuthFiles)
+
+	wrangler, _ := r.Get("wrangler")
+	require.Equal(t, "/h/.config", wrangler.GlobalDir(v))
+	require.Equal(t, []string{"XDG_CONFIG_HOME=/o"}, wrangler.InjectEnv("/o"))
+
+	railway, _ := r.Get("railway")
+	require.True(t, railway.Experimental)
+	require.Equal(t, "/h", railway.GlobalDir(v))
+	require.Equal(t, []string{"HOME=/o"}, railway.InjectEnv("/o"))
+
+	docker, _ := r.Get("docker")
+	require.Equal(t, []string{"credsStore", "credHelpers"}, docker.Dir.HelperKeys)
+	require.Equal(t, []string{"DOCKER_CONFIG=/o"}, docker.InjectEnv("/o"))
 }
