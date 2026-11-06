@@ -8,9 +8,6 @@ import "errors"
 // ErrLocked means the agent holds no key.
 var ErrLocked = errors.New("agent is locked")
 
-// errUnsupported is returned on platforms without the agent.
-var errUnsupported = errors.New("whoas agent is not supported on this platform")
-
 // request is one JSON line from client to agent.
 type request struct {
 	Op   string `json:"op"`             // "status" | "load" | "lock" | "decrypt"

@@ -1,0 +1,28 @@
+# golangci-lint v2. CI runs it in the lint job of .github/workflows/ci.yml.
+# Local: golangci-lint run ./...
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+  exclusions:
+    presets:
+      # errcheck: unchecked Close/Remove/Fprint* on cleanup and best-effort
+      # warning paths (the golangci-lint v1 default)
+      - std-error-handling
+    rules:
+      # errcheck: deferred unlock/cleanup and draining the other goroutine's
+      # result after the first one decided; there is no caller left to tell
+      - linters: [errcheck]
+        source: '^\s*(defer |<-)'
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

@@ -1,0 +1,57 @@
+name: New CLI or MCP server
+description: Ask for an adapter for a CLI (or remote MCP server) whoas doesn't support yet
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Adapters are small TOML files (see [Adding a CLI](https://github.com/S-kkipie/whoas#adding-a-cli)),
+        so you can also try one in `~/.config/whoas/adapters/` and send a PR.
+        **Never paste a real token or the contents of the CLI's auth files.**
+  - type: input
+    id: name
+    attributes:
+      label: CLI name and binary
+      description: The product and the command you type
+      placeholder: DigitalOcean CLI, `doctl`
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: How does it authenticate?
+      options:
+        - Browser / OAuth login that writes files (dir-overlay adapter)
+        - API token in an env var (env-token adapter)
+        - Both
+        - Remote MCP server with an API key header (mcp adapter)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: storage
+    attributes:
+      label: Where does it store the login?
+      description: |
+        For a login: the config dir (`~/.config/doctl`), the files that hold the session,
+        and the env var or flag that moves the config dir (`DOCTL_CONFIG`, `--config`).
+        For a token: the env var names it reads, in priority order, and any other
+        variables that would override them.
+    validations:
+      required: true
+  - type: input
+    id: whoami
+    attributes:
+      label: Command that prints the current account
+      placeholder: doctl account get --output json
+  - type: textarea
+    id: docs
+    attributes:
+      label: Docs links
+      description: Authentication docs, env var reference, source code
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I'd like to send the adapter as a PR myself.

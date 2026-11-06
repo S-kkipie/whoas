@@ -4,8 +4,12 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// errUnsupported is returned on platforms without the agent.
+var errUnsupported = errors.New("whoas agent is not supported on this platform")
 
 // Server is unavailable on Windows (whoas.exe only serves keystore-helper).
 type Server struct{}

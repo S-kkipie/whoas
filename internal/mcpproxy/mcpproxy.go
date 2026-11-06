@@ -171,7 +171,7 @@ func (b *bridger) up(ctx context.Context) error {
 			b.calls.Add(1)
 			go func() {
 				defer b.calls.Done()
-				b.send(ctx, req)
+				_ = b.send(ctx, req) // only a failed initialize returns an error, and that one is sent in order
 			}()
 			continue
 		}
