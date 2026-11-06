@@ -4,7 +4,7 @@ kind = "env-token"
 
 [[secret]]
 env   = "POSTMAN_API_KEY"
-label = "postman API Key"
+label = "Postman API Key"
 
 [login]
 hint = "Create one at https://web.postman.co/settings/me/api-keys"

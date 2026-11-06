@@ -16,4 +16,4 @@ env   = "SPACELIFT_API_KEY_SECRET"
 label = "Spacelift API Secret"
 
 [login]
-hint = "Create one at https://mycorp.app.spacelift.io/settings/api-keys"
+hint = "Create an API key in your Spacelift account (Settings → API keys)"

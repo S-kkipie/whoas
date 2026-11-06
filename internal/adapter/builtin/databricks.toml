@@ -12,4 +12,4 @@ env   = "DATABRICKS_TOKEN"
 label = "Databricks Token"
 
 [login]
-hint = "Create one at https://docs.databricks.com/dev-tools/auth.html"
+hint = "See https://docs.databricks.com/dev-tools/auth.html"

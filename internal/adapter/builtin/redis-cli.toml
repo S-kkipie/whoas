@@ -7,4 +7,4 @@ env   = "REDISCLI_AUTH"
 label = "Redis User Credentials"
 
 [login]
-hint = "Create one at https://redis.io/docs/ui/cli/#host-port-password-and-database"
+hint = "Your Redis password (redis-cli sends it as REDISCLI_AUTH)"

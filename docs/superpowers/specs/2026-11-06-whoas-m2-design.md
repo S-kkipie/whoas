@@ -140,7 +140,7 @@ Tip, documented: any credential the CLI writes **during a run** is captured, so 
 
 ### Token-based CLI set
 - The env-var data for token-based CLIs is collected once, out of band, from the public [1Password Shell Plugins](https://github.com/1Password/shell-plugins) catalogue (MIT). The collection tool is **not** committed.
-- Only plugins whose default provisioner is a plain env-var mapping qualify. Bins already covered by a hand-written adapter, and collisions, are excluded. The resulting list is reviewed by hand.
+- Only plugins whose default provisioner is a plain env-var mapping qualify. Bins already covered by a hand-written adapter, and collisions, are excluded (e.g. Laravel Forge's `forge`, which is also Foundry's binary). The resulting list is reviewed by hand: 64 env-token built-ins, 72 built-ins in all.
 - The adapters are committed as ordinary whoas built-ins, in the same style as the hand-written ones. The README credits 1Password Shell Plugins as the reference for the env-var names.
 - The adapters contain only facts (binary names, env-var names, URLs), no third-party code.
 
@@ -183,6 +183,6 @@ Tip, documented: any credential the CLI writes **during a run** is captured, so 
 | Risk | Mitigation |
 |---|---|
 | A tool under `railway` ignores `$HOME` | marked experimental; documented |
-| Token adapter data drifts from the real CLI | data only, so a wrong var means the token is not used; nothing breaks; re-collect when needed |
+| Token adapter data drifts from the real CLI | a wrong or outranked variable means the CLI falls back to its stored login or an ambient variable, i.e. runs as the wrong account without an error. Mitigated by `unset_env` for known competing variables (`HUGGING_FACE_HUB_TOKEN` for `hf`, `FLY_API_TOKEN` for `fly`/`flyctl`), a README caveat to check each CLI once with a whoami-style command, and re-collecting the data when needed |
 | vercel `config.json` per identity stops sharing telemetry/preferences | accepted: required to isolate `currentTeam` |
 | Root overlays mirror many entries | top-level only (typically < 200 symlinks, ~1 ms); measured in tests |

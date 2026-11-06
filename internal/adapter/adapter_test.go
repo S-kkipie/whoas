@@ -314,10 +314,30 @@ func TestTokenBuiltins(t *testing.T) {
 	require.Equal(t, "TF_TOKEN_app_terraform_io", terraform.Secrets[0].Env)
 	stripe, _ := r.Get("stripe")
 	require.Equal(t, "STRIPE_API_KEY", stripe.Secrets[0].Env)
-	for _, n := range []string{"claude", "agent", "psql"} {
+	for _, n := range []string{"claude", "agent", "psql", "forge"} {
 		_, ok := r.Get(n)
 		require.False(t, ok, "%s is intentionally not a built-in", n)
 	}
+	_, ok = r.ByBin("forge")
+	require.False(t, ok, "forge is Foundry's bin too")
+
+	// competing variables that would outrank the injected token are removed
+	hf, _ := r.Get("hf")
+	require.Equal(t, "HF_TOKEN", hf.Secrets[0].Env)
+	require.Equal(t, []string{"HUGGING_FACE_HUB_TOKEN"}, hf.UnsetEnv)
+	for _, n := range []string{"fly", "flyctl"} {
+		a, _ := r.Get(n)
+		require.Equal(t, []string{"FLY_API_TOKEN"}, a.UnsetEnv, n)
+	}
+
+	// hints point at a real page, without placeholders
+	for _, n := range r.Names() {
+		a, _ := r.Get(n)
+		require.NotContains(t, a.Login.Hint, "[account]", n)
+		require.NotContains(t, a.Login.Hint, "mycorp", n)
+	}
+	postman, _ := r.Get("postman")
+	require.Equal(t, "Postman API Key", postman.Secrets[0].Label)
 }
 
 func TestConflicts(t *testing.T) {

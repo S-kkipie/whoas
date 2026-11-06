@@ -81,6 +81,8 @@ it happens (`whoas: warning: railway@work: .gitconfig was replaced during the ru
 **wrangler:** a legacy `~/.wrangler` directory wins over `$XDG_CONFIG_HOME` in
 wrangler and would bypass the overlay, so whoas refuses to add or run wrangler
 identities while it exists. Move it once: `mv ~/.wrangler ~/.config/.wrangler`.
+On macOS wrangler keeps its session under `~/Library/Preferences/.wrangler`, so
+`whoas import wrangler` may find nothing there (`add` and runs still isolate).
 
 ### API-token CLIs
 
@@ -89,18 +91,22 @@ CLIs that authenticate with an API token instead of a login get an
 env var for that one process. Built in: `supabase`, `terraform` (HCP Terraform),
 `stripe`, `openai`, `netlify`, `fly`/`flyctl`, `glab`, `doppler`, `snyk`,
 `sentry-cli`, `pulumi`, `hcloud`, `vultr-cli`, `linode-cli`, `twilio`,
-`upstash`, `vault`, `gemini`, `grok`, `cargo`, `brew` and about 40 more —
+`upstash`, `vault`, `gemini`, `grok`, `cargo`, `brew` and 42 more (64 in all) —
 `whoas providers --all` lists them all.
 
 ```console
-$ whoas add stripe work            # asks for the key, hidden
+$ whoas add stripe work            # asks for the key; typing is not echoed
 hint: Create one at https://dashboard.stripe.com/apikeys
-Stripe Secret Key (STRIPE_API_KEY): ********
+Stripe Secret Key (STRIPE_API_KEY):
 saved stripe@work
 $ export STRIPE_API_KEY=sk_test_…  # or take the one already in your shell
 $ whoas import stripe personal
 $ printf '%s\n' "$TOKEN" | whoas add supabase ci --stdin    # scripts / CI
 ```
+
+Isolation holds when the CLI prefers that env var over its own stored login (and
+over other variables it reads). Check each CLI once with a command that prints
+the account (`whoas <cli>@work <whoami-like command>`) before relying on it.
 
 You can [add your own](#adding-a-cli) adapter for any CLI.
 
@@ -420,7 +426,9 @@ whoas isolates the credentials docker keeps **inline** in `config.json`
 external helper (a keychain, `gcloud`, `ecr-login`…) whose store is global;
 whoas warns when an identity contains them. Anything docker writes during a run
 is captured, so you can add a registry to an identity with
-`whoas docker@work login ghcr.io`.
+`whoas docker@work login ghcr.io`. Because `config.json` is per identity, it also
+carries docker's `currentContext`, proxies and plugin settings per identity (like
+vercel's selected team).
 
 ## Security
 

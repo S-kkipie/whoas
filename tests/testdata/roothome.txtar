@@ -30,7 +30,7 @@ stderr '^whoas: fakehome@work \(account=work\) \[experimental\]$'
 env WHOAS_BANNER=
 
 # concurrent runs of the same identity share one overlay, removed afterwards
-exec whoas fakehome@work sleep 1500 whoami &a&
+exec whoas fakehome@work sleep 3000 whoami &a&
 wait-exists $WORK/run/id/fakehome/work
 exec whoas fakehome@work whoami
 stdout '^account=work$'

@@ -1,9 +1,11 @@
 name = "hf"
 bin  = "hf"
 kind = "env-token"
+# huggingface_hub reads HF_TOKEN first; the legacy name would compete with it.
+unset_env = ["HUGGING_FACE_HUB_TOKEN"]
 
 [[secret]]
-env   = "HUGGING_FACE_HUB_TOKEN"
+env   = "HF_TOKEN"
 label = "Hugging Face User Access Token"
 
 [[secret]]
