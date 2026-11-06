@@ -65,6 +65,9 @@ type DirSpec struct {
 	// HelperKeys are top-level JSON keys of an auth file that delegate
 	// credentials to stores outside whoas (docker: credsStore, credHelpers).
 	HelperKeys []string `toml:"helper_keys"`
+	// Conflicts are paths (same placeholders as Global) that, when present,
+	// make the CLI ignore the injected dir (wrangler: a legacy ~/.wrangler).
+	Conflicts []string `toml:"conflicts"`
 }
 
 // Inject points the CLI at {dir} through env vars or leading flags.
@@ -197,6 +200,11 @@ func (a *Adapter) validateDirOverlay() error {
 			return fmt.Errorf("inject env %s is only allowed with dir.global = %s", v, root)
 		}
 	}
+	for _, c := range a.Dir.Conflicts {
+		if !strings.HasPrefix(c, "{home}/") && !strings.HasPrefix(c, "{xdg_config}/") && !strings.HasPrefix(c, "{xdg_data}/") {
+			return fmt.Errorf("dir.conflicts %q must start with {home}/, {xdg_config}/ or {xdg_data}/", c)
+		}
+	}
 	for _, k := range a.Dir.HelperKeys {
 		if k == "" || strings.ContainsAny(k, ".*?|#@\\") {
 			return fmt.Errorf("helper key %q must be a plain top-level JSON key", k)
@@ -209,7 +217,7 @@ func (a *Adapter) validateDirOverlay() error {
 }
 
 func (a *Adapter) validateEnvToken() error {
-	if a.Dir.Global != "" || len(a.Dir.AuthFiles) > 0 || len(a.Dir.Inject.Env) > 0 || len(a.Dir.Inject.Flag) > 0 || len(a.Dir.HelperKeys) > 0 {
+	if a.Dir.Global != "" || len(a.Dir.AuthFiles) > 0 || len(a.Dir.Inject.Env) > 0 || len(a.Dir.Inject.Flag) > 0 || len(a.Dir.HelperKeys) > 0 || len(a.Dir.Conflicts) > 0 {
 		return errors.New("[dir] is not valid for env-token adapters")
 	}
 	if len(a.Login.Cmd) > 0 {
@@ -237,6 +245,18 @@ func (a *Adapter) validateEnvToken() error {
 // Expand replaces {home}, {xdg_config}, {xdg_data} and {dir}.
 func Expand(s string, v Vars, dir string) string {
 	return strings.NewReplacer("{home}", v.Home, "{xdg_config}", v.XDGConfig, "{xdg_data}", v.XDGData, "{dir}", dir).Replace(s)
+}
+
+// CheckConflicts fails when one of the adapter's conflicting paths exists:
+// the CLI would use it instead of the isolated directory.
+func (a *Adapter) CheckConflicts(v Vars) error {
+	for _, c := range a.Dir.Conflicts {
+		p := filepath.Clean(Expand(c, v, ""))
+		if _, err := os.Stat(p); err == nil {
+			return fmt.Errorf("%s: %s exists and %s uses it instead of the isolated directory; move it (see the adapter's hint) to use identities", a.Name, p, a.Bin)
+		}
+	}
+	return nil
 }
 
 // GlobalDir is the CLI's real config dir.

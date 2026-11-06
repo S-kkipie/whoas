@@ -70,6 +70,9 @@ func runProvider(e *env, req runRequest) (int, error) {
 	if depth >= maxDepth {
 		return 0, errors.New("WHOAS_DEPTH limit reached (shim loop?)")
 	}
+	if err := a.CheckConflicts(e.vars()); err != nil {
+		return 0, err
+	}
 	bin, err := e.realBin(a.Bin)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %w", errCLINotFound, err)

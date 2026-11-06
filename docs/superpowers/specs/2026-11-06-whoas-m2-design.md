@@ -19,7 +19,7 @@ Out of M2: Claude Code + MCP (M3), native Windows, git identities, and the M1 de
 ## Findings that shaped the design (this machine, 2026-11-06)
 
 - **Spike 0b resolved by inspection.** Under WSL, `vercel` is the npm shim `/mnt/c/.../npm/vercel`. It is a POSIX script that `exec`s `node` when there is no `node.exe` beside it, so the Linux node runs the Windows-installed JS. vercel therefore behaves as a Linux CLI: its config lives in `$XDG_DATA_HOME/com.vercel.cli`, and `--global-config` takes a Linux path. No `wslpath` translation is needed for npm-installed CLIs.
-- `wrangler` keeps its OAuth session in `$XDG_CONFIG_HOME/.wrangler/config/default.toml` (it resolves the dir via XDG). The access token expires hourly and is refreshed in place.
+- `wrangler` keeps its OAuth session in `$XDG_CONFIG_HOME/.wrangler/config/default.toml` (it resolves the dir via XDG). The access token expires hourly and is refreshed in place. If `~/.wrangler` is a directory, wrangler uses it instead of the XDG path (see `conflicts`).
 - `railway` keeps token + project links in `~/.railway/config.json` (with `config.lock`), resolved from `$HOME`.
 - `docker` keeps inline `auths` in `~/.docker/config.json`. `credHelpers`/`credsStore` entries delegate to external stores.
 - `WSLENV` does not forward Linux env vars to Windows executables (irrelevant now that vercel runs on Linux node).
@@ -39,6 +39,15 @@ Any other combination is a load error. The overlay mechanics are unchanged: the 
 
 ### `helper_keys`
 Optional `dir.helper_keys = ["credsStore", "credHelpers"]`: top-level JSON keys of an auth file that delegate credentials to stores outside whoas. Each key must be a plain top-level key name. They are used for the warning described under Docker.
+
+### `conflicts`
+Optional `dir.conflicts = ["{home}/.wrangler"]`: paths, with the same placeholders as `global` (each must start with `{home}/`, `{xdg_config}/` or `{xdg_data}/`), that make the CLI ignore the injected dir. If any expanded path exists, `add`, `import` and every run (explicit, shim, `whoas run`) of that adapter fail before touching anything, exit 125:
+
+```
+whoas: <provider>: <path> exists and <bin> uses it instead of the isolated directory; move it (see the adapter's hint) to use identities
+```
+
+Not valid for `env-token` adapters.
 
 ### `experimental`
 Optional boolean. It is shown in `whoas providers` and in the banner (`whoas: railway@x (...) [experimental]`).
@@ -94,7 +103,7 @@ Validation:
 | Adapter | Kind | global / inject | auth / secrets | unset_env | notes |
 |---|---|---|---|---|---|
 | `vercel` | dir-overlay | `{xdg_data}/com.vercel.cli`, flag `--global-config {dir}` | `auth.json`, `config.json` | `VERCEL_TOKEN` | `config.json` holds `currentTeam` → per identity |
-| `wrangler` | dir-overlay (root) | `{xdg_config}`, `XDG_CONFIG_HOME={dir}` | `.wrangler/config` (whole dir: wrangler has its own auth profiles) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` | |
+| `wrangler` | dir-overlay (root) | `{xdg_config}`, `XDG_CONFIG_HOME={dir}` | `.wrangler/config` (whole dir: wrangler has its own auth profiles) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` | `conflicts = ["{home}/.wrangler"]`: wrangler prefers a legacy `~/.wrangler` dir over XDG; the hint says to move it to `~/.config/.wrangler` |
 | `railway` | dir-overlay (root), experimental | `{home}`, `HOME={dir}` | `.railway/config.json` | `RAILWAY_TOKEN`, `RAILWAY_API_TOKEN` | children of `railway run` also see the overlay HOME |
 | `docker` | dir-overlay | `{home}/.docker`, `DOCKER_CONFIG={dir}` | `config.json` | — | warns about `credHelpers`/`credsStore` |
 | `supabase` | env-token | — | `SUPABASE_ACCESS_TOKEN` | — | |

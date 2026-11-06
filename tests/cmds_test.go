@@ -36,7 +36,8 @@ cmd = ["fakecli", "whoami"]
 `
 
 // fakeAdapters are installed as user adapters in every script: the plain
-// fake CLI, a root overlay of $HOME, an env-token CLI and one with helper keys.
+// fake CLI, a root overlay of $HOME (with a conflicting legacy dir), an
+// env-token CLI and one with helper keys.
 var fakeAdapters = map[string]string{
 	"fakecli.toml": fakeAdapter,
 	"fakehome.toml": `name = "fakehome"
@@ -48,6 +49,7 @@ experimental = true
 global     = "{home}"
 inject     = { env = { HOME = "{dir}" } }
 auth_files = [".fakecli/auth.json"]
+conflicts  = ["{home}/.legacy"]
 
 [login]
 cmd = ["fakehome", "login"]

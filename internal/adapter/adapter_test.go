@@ -302,3 +302,33 @@ func TestTokenBuiltins(t *testing.T) {
 		require.False(t, ok, "%s is intentionally not a built-in", n)
 	}
 }
+
+func TestConflicts(t *testing.T) {
+	body := replace(valid, `auth_files = ["auth.json", "nested/dir"]`, "auth_files = [\"auth.json\", \"nested/dir\"]\nconflicts  = [\"{home}/.legacy\", \"{xdg_config}/old\"]")
+	a, err := Parse([]byte(body), "conflicts")
+	require.NoError(t, err)
+	require.Equal(t, []string{"{home}/.legacy", "{xdg_config}/old"}, a.Dir.Conflicts)
+
+	h := t.TempDir()
+	v := Vars{Home: h, XDGConfig: filepath.Join(h, ".config"), XDGData: filepath.Join(h, ".local", "share")}
+	require.NoError(t, a.CheckConflicts(v))
+	old := filepath.Join(h, ".config", "old")
+	require.NoError(t, os.MkdirAll(old, 0o700))
+	require.EqualError(t, a.CheckConflicts(v), "fake: "+old+" exists and fake uses it instead of the isolated directory; move it (see the adapter's hint) to use identities")
+
+	for name, c := range map[string]struct{ body, errSubstr string }{
+		"conflict absolute": {replace(body, `"{xdg_config}/old"`, `"/etc/old"`), "dir.conflicts"},
+		"conflict relative": {replace(body, `"{xdg_config}/old"`, `"old"`), "dir.conflicts"},
+		"conflict is root":  {replace(body, `"{xdg_config}/old"`, `"{home}"`), "dir.conflicts"},
+		"conflict on token": {token + "[dir]\nconflicts = [\"{home}/.tok\"]\n", "[dir] is not valid"},
+	} {
+		_, err := Parse([]byte(c.body), name)
+		require.ErrorContains(t, err, c.errSubstr, name)
+	}
+
+	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
+	require.NoError(t, err)
+	wrangler, _ := r.Get("wrangler")
+	require.Equal(t, []string{"{home}/.wrangler"}, wrangler.Dir.Conflicts)
+	require.Contains(t, wrangler.Login.Hint, "~/.config/.wrangler")
+}

@@ -73,6 +73,10 @@ config.
 ⚗️ **experimental:** works, with a known gap — commands started by `railway run`
 also see the overlay `HOME`. The banner and `whoas providers` mark it.
 
+**wrangler:** a legacy `~/.wrangler` directory wins over `$XDG_CONFIG_HOME` in
+wrangler and would bypass the overlay, so whoas refuses to add or run wrangler
+identities while it exists. Move it once: `mv ~/.wrangler ~/.config/.wrangler`.
+
 ### API-token CLIs
 
 CLIs that authenticate with an API token instead of a login get an
@@ -361,8 +365,10 @@ json = "email"                       # optional gjson path into stdout
 ```
 
 Optional `[dir]` keys: `helper_keys = ["credsStore"]` lists top-level JSON keys of an
-auth file that delegate credentials to external helpers (whoas warns about them),
-and `experimental = true` (top level) marks an adapter with known gaps.
+auth file that delegate credentials to external helpers (whoas warns about them);
+`conflicts = ["{home}/.mycli"]` lists paths that make the CLI ignore the injected
+dir (whoas refuses to add or run while one exists).
+`experimental = true` (top level) marks an adapter with known gaps.
 
 **A whole root as the overlay.** If the CLI only honours `$HOME` or `$XDG_*`, set
 `global` to exactly `{home}`, `{xdg_config}` or `{xdg_data}` and inject the

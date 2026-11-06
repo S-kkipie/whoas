@@ -9,10 +9,13 @@ unset_env = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_API_KEY"]
 global     = "{xdg_config}"
 inject     = { env = { XDG_CONFIG_HOME = "{dir}" } }
 auth_files = [".wrangler/config"]
+# A legacy ~/.wrangler directory wins over $XDG_CONFIG_HOME in wrangler, which
+# would bypass the overlay: whoas refuses to run while it exists.
+conflicts  = ["{home}/.wrangler"]
 
 [login]
 cmd  = ["wrangler", "login"]
-hint = "If your browser is signed in to another Cloudflare account, switch accounts there first."
+hint = "If your browser is signed in to another Cloudflare account, switch accounts there first. If ~/.wrangler exists, move it to ~/.config/.wrangler first."
 
 [whoami]
 cmd  = ["wrangler", "whoami", "--json"]

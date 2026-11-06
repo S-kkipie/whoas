@@ -43,3 +43,26 @@ wait
 unchanged $HOME/.fakecli/auth.json g
 exec fakehome whoami
 stdout '^account=global$'
+
+# a conflicting legacy dir (wrangler's ~/.wrangler) blocks add, import and
+# every run before anything is touched; whoas exits 125
+mkdir $HOME/.legacy
+expect-exit 125 whoas fakehome@work whoami
+stderr '^whoas: fakehome: .*home/\.legacy exists and fakehome uses it instead of the isolated directory; move it \(see the adapter''s hint\) to use identities$'
+! stdout 'account='
+expect-exit 125 whoas add fakehome blocked
+stderr 'home/\.legacy exists'
+expect-exit 125 whoas import fakehome blocked
+stderr 'home/\.legacy exists'
+! exists $WORK/data/vault/fakehome/blocked.age
+exec whoas profile set legacy fakehome@work
+exec whoas shims install
+expect-exit 125 whoas run -p legacy -- fakehome whoami
+stderr 'home/\.legacy exists'
+! stdout 'account='
+unchanged $HOME/.fakecli/auth.json g
+rm $HOME/.legacy
+exec whoas run -p legacy -- fakehome whoami
+stdout '^account=work$'
+exec whoas fakehome@work whoami
+stdout '^account=work$'

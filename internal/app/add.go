@@ -36,6 +36,9 @@ func newAddCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := a.CheckConflicts(e.vars()); err != nil {
+				return &exitError{code: exitWhoasError, err: err}
+			}
 			v, err := e.initVault()
 			if err != nil {
 				return err
