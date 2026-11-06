@@ -21,6 +21,10 @@ const account = "master"
 // ErrNotFound means the backend holds no master key yet.
 var ErrNotFound = errors.New("master key not found")
 
+// ErrNeedsTerminal means reading the master key would ask on a terminal,
+// and the store was made not to (NoPrompt).
+var ErrNeedsTerminal = errors.New("reading the master key needs a terminal")
+
 // Store is one place the master key can live.
 type Store interface {
 	Name() string
@@ -28,6 +32,18 @@ type Store interface {
 	Set(secret string) error
 	Slow() bool         // true when Get is slow or interactive; an agent should cache the key
 	TTL() time.Duration // agent idle TTL for this store; 0 = no expiry
+}
+
+// NoPrompt returns s made to fail with ErrNeedsTerminal instead of asking
+// for a passphrase: for processes whose terminal belongs to someone else,
+// like an MCP proxy started by an agent.
+func NoPrompt(s Store) Store {
+	if p, ok := s.(*passphraseStore); ok {
+		c := *p
+		c.prompt = func(string) (string, error) { return "", ErrNeedsTerminal }
+		return &c
+	}
+	return s
 }
 
 // rememberFile names the file in the data dir that records the backend.

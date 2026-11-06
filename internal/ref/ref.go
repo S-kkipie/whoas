@@ -26,7 +26,7 @@ var Reserved = map[string]bool{
 	"profile": true, "which": true, "trust": true, "untrust": true,
 	"shims": true, "agent": true, "unlock": true, "lock": true,
 	"doctor": true, "providers": true, "version": true, "help": true,
-	"completion": true, "keystore-helper": true,
+	"completion": true, "keystore-helper": true, "mcp": true,
 }
 
 // ValidProvider checks a provider name ("gh", "mcp/posthog").
