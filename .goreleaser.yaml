@@ -1,14 +1,22 @@
+# GoReleaser v2. The release workflow (.github/workflows/release.yml) runs it on
+# a v* tag with --release-header .github/release-notes/<tag>.md, so each release
+# opens with hand-written notes followed by the changelog below.
+# Local dry run: goreleaser release --snapshot --clean --skip=publish
 version: 2
 project_name: whoas
 
 builds:
   - id: whoas
     main: ./cmd/whoas
+    binary: whoas
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    flags: [-trimpath]
+    # {{.Version}} drops the tag's "v"; keep it so a release reports v0.3.0,
+    # like go install …@v0.3.0 does.
     ldflags:
-      - -s -w -X github.com/S-kkipie/whoas/internal/app.Version={{.Version}}
+      - -s -w -X github.com/S-kkipie/whoas/internal/app.Version=v{{.Version}}
 
 archives:
   - id: default
@@ -20,3 +28,26 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs(\(.+\))?!?:'
+      - '^test(\(.+\))?!?:'
+      - '^Merge '
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: S-kkipie
+    name: whoas

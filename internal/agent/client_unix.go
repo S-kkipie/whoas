@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
+	"os"
 	"os/exec"
 	"syscall"
 	"time"
@@ -67,9 +68,12 @@ func (c *Client) Decrypt(ct []byte) ([]byte, error) {
 	return resp.Data, err
 }
 
-// Spawn starts "<self> agent" detached and waits until it answers.
+// Spawn starts "<self> agent" detached and waits until it answers. The
+// agent outlives the caller, so it gets only an allowlisted env (agentEnv),
+// never the caller's tokens.
 func Spawn(self, socket string) error {
 	cmd := exec.Command(self, "agent")
+	cmd.Env = agentEnv(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err

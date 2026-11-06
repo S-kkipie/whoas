@@ -1,3 +1,5 @@
-# whoas version prints the build version.
+# whoas version prints the build version: the -ldflags value in releases, else
+# the module version the go command stamped (a pseudo-version when built from
+# a git checkout), else dev.
 exec whoas version
-stdout '^whoas dev$'
+stdout '^whoas (dev|v[0-9]\S*)$'
