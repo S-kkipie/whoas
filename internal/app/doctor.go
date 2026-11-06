@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/agent"
+	"github.com/S-kkipie/whoas/internal/overlay"
 	"github.com/S-kkipie/whoas/internal/ref"
 	"github.com/S-kkipie/whoas/internal/runlock"
 	"github.com/S-kkipie/whoas/internal/supervisor"
@@ -135,7 +135,7 @@ func sweepCaptures(root string) (int, error) {
 		if err != nil || runlock.Alive(pid) {
 			return fs.SkipDir
 		}
-		if err := os.RemoveAll(path); err != nil {
+		if err := overlay.Remove(path); err != nil {
 			return err
 		}
 		n++

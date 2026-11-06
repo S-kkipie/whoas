@@ -46,7 +46,7 @@ func Build(dir, global string, authPaths []string, files map[string]envelope.Fil
 	if err := mirror(dir, global, ".", auth, anc, records); err != nil {
 		return err
 	}
-	if err := writeManifest(dir, records); err != nil {
+	if err := writeManifest(dir, global, records); err != nil {
 		return err
 	}
 	for rel, f := range files {
@@ -134,8 +134,15 @@ func fingerprintOf(info fs.FileInfo) fingerprint {
 // the overlay (for a root overlay, in $HOME).
 func manifestPath(dir string) string { return filepath.Clean(dir) + ".mirror.json" }
 
-func writeManifest(dir string, records map[string]fingerprint) error {
-	data, err := json.Marshal(records)
+// manifest is what Build records: the global dir it mirrored and a
+// fingerprint per mirrored entry.
+type manifest struct {
+	Global  string                 `json:"global"`
+	Entries map[string]fingerprint `json:"entries"`
+}
+
+func writeManifest(dir, global string, records map[string]fingerprint) error {
+	data, err := json.Marshal(manifest{Global: global, Entries: records})
 	if err != nil {
 		return err
 	}
@@ -152,17 +159,21 @@ func writeManifest(dir string, records map[string]fingerprint) error {
 }
 
 // readManifest returns nil when the manifest is missing or unreadable (an
-// overlay from an older whoas or a crashed build): nothing is copied back.
-func readManifest(dir string) map[string]fingerprint {
+// overlay from an older whoas or a crashed build), or was recorded for another
+// global dir (recovery under a changed HOME/XDG): nothing is copied back.
+func readManifest(dir, global string) map[string]fingerprint {
 	data, err := os.ReadFile(manifestPath(dir))
 	if err != nil {
 		return nil
 	}
-	var records map[string]fingerprint
-	if json.Unmarshal(data, &records) != nil {
+	var m manifest
+	if json.Unmarshal(data, &m) != nil {
 		return nil
 	}
-	return records
+	if abs, err := filepath.Abs(global); err != nil || abs != m.Global {
+		return nil
+	}
+	return m.Entries
 }
 
 // Collect reads the auth paths under root (files or whole dirs).
@@ -242,7 +253,7 @@ var rename = os.Rename
 func Promote(dir, global string, authPaths []string) ([]string, error) {
 	auth, anc := split(authPaths)
 	var replaced []string
-	err := promote(dir, global, ".", auth, anc, readManifest(dir), &replaced)
+	err := promote(dir, global, ".", auth, anc, readManifest(dir, global), &replaced)
 	sort.Strings(replaced)
 	return replaced, err
 }
@@ -272,7 +283,8 @@ func promote(dir, global, rel string, auth, anc map[string]bool, records map[str
 			rec, ok := records[name]
 			if ok && rec.File && e.Type().IsRegular() && gi.Mode().IsRegular() && fingerprintOf(gi) == rec {
 				if err := copyBack(filepath.Join(dir, child), dst); err != nil {
-					return err
+					// global copy kept: report it and keep promoting the rest
+					*replaced = append(*replaced, name)
 				}
 				continue
 			}
@@ -299,13 +311,35 @@ func copyBack(src, dst string) error {
 	if !errors.Is(err, syscall.EXDEV) {
 		return err
 	}
+	// src must still be the regular file Promote saw: a process that outlived
+	// the CLI could have swapped it for a symlink to an auth file.
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
 	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s is no longer a regular file", src)
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if fi, err := in.Stat(); err != nil || !os.SameFile(info, fi) {
+		return fmt.Errorf("%s changed while copying back", src)
+	}
 	tmp := fmt.Sprintf("%s.whoas-tmp-%d", dst, os.Getpid())
 	_ = os.Remove(tmp)
-	if err := copyFile(src, tmp, info.Mode().Perm()); err != nil {
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
 		os.Remove(tmp)
 		return err
 	}
@@ -394,8 +428,10 @@ func copyFile(src, dst string, perm os.FileMode) error {
 // Remove deletes dir (symlinks are removed, never followed) and its manifest.
 func Remove(dir string) error {
 	err := os.RemoveAll(dir)
-	if merr := os.Remove(manifestPath(dir)); merr != nil && !errors.Is(merr, fs.ErrNotExist) && err == nil {
-		err = merr
+	for _, p := range []string{manifestPath(dir), manifestPath(dir) + ".tmp"} {
+		if merr := os.Remove(p); merr != nil && !errors.Is(merr, fs.ErrNotExist) && err == nil {
+			err = merr
+		}
 	}
 	return err
 }

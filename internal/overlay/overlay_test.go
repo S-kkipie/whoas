@@ -235,11 +235,81 @@ func TestPromoteCopyBackCrossDevice(t *testing.T) {
 	info, err := os.Stat(filepath.Join(g, "a.txt"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o640), info.Mode().Perm())
+	_, err = os.Lstat(filepath.Join(dir, "a.txt"))
+	require.True(t, os.IsNotExist(err), "overlay src removed")
 	entries, err := os.ReadDir(g)
 	require.NoError(t, err)
 	for _, e := range entries {
 		require.NotContains(t, e.Name(), ".whoas-tmp-")
 	}
+}
+
+func TestPromoteCorruptManifestKeepsGlobal(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "edited", 0o600)
+	write(t, dir+".mirror.json", "{not json")
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+}
+
+func TestPromoteGlobalSymlinkNotReplaced(t *testing.T) {
+	g := globalFixture(t)
+	target := filepath.Join(t.TempDir(), "stow.txt")
+	write(t, target, "stowed")
+	require.NoError(t, os.Symlink(target, filepath.Join(g, "link.txt")))
+	dir := filepath.Join(t.TempDir(), "ov")
+	require.NoError(t, Build(dir, g, auth, nil))
+	renameOver(t, dir, "link.txt", "edited", 0o600)
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"link.txt"}, replaced)
+	require.True(t, isLink(t, filepath.Join(g, "link.txt")))
+	require.Equal(t, "stowed", read(t, target))
+}
+
+func TestPromoteGlobalPathMismatchKeepsGlobal(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "edited", 0o600)
+	g2 := t.TempDir()
+	write(t, filepath.Join(g2, "a.txt"), "shared")
+	replaced, err := Promote(dir, g2, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
+	require.Equal(t, "shared", read(t, filepath.Join(g2, "a.txt")))
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+}
+
+// A copy-back failure is reported and does not stop later entries.
+func TestPromoteCopyBackFailureContinues(t *testing.T) {
+	g, dir := buildFixture(t)
+	renameOver(t, dir, "a.txt", "edited", 0o600)
+	write(t, filepath.Join(dir, "zz-new.txt"), "new")
+	rename = func(a, b string) error {
+		if filepath.Base(a) == "a.txt" {
+			return &os.LinkError{Op: "rename", Old: a, New: b, Err: syscall.EPERM}
+		}
+		return os.Rename(a, b)
+	}
+	t.Cleanup(func() { rename = os.Rename })
+	replaced, err := Promote(dir, g, auth)
+	require.NoError(t, err)
+	require.Equal(t, []string{"a.txt"}, replaced)
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
+	require.Equal(t, "new", read(t, filepath.Join(g, "zz-new.txt")))
+}
+
+// Cross-device: src swapped for a symlink (to an auth file) is never copied.
+func TestPromoteCopyBackRefusesSymlinkSrc(t *testing.T) {
+	g, dir := buildFixture(t)
+	require.NoError(t, os.Remove(filepath.Join(dir, "a.txt")))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "auth.json"), filepath.Join(dir, "a.txt")))
+	// A symlink in dir is skipped by Promote; call copyBack directly for the race window.
+	rename = func(a, b string) error { return &os.LinkError{Op: "rename", Old: a, New: b, Err: syscall.EXDEV} }
+	t.Cleanup(func() { rename = os.Rename })
+	require.Error(t, copyBack(filepath.Join(dir, "a.txt"), filepath.Join(g, "a.txt")))
+	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
 }
 
 func TestManifestNextToDirAndRemoved(t *testing.T) {
@@ -251,6 +321,11 @@ func TestManifestNextToDirAndRemoved(t *testing.T) {
 	require.NoError(t, Remove(dir))
 	_, err = os.Stat(dir + ".mirror.json")
 	require.True(t, os.IsNotExist(err), "manifest removed with the overlay")
+
+	write(t, dir+".mirror.json.tmp", "{}")
+	require.NoError(t, Remove(dir))
+	_, err = os.Stat(dir + ".mirror.json.tmp")
+	require.True(t, os.IsNotExist(err), "leftover temp manifest removed")
 	require.Equal(t, "shared", read(t, filepath.Join(g, "a.txt")))
 }
 
