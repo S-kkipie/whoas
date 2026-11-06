@@ -1,6 +1,6 @@
 module github.com/S-kkipie/whoas
 
-go 1.25.0
+go 1.26.0
 
 require (
 	filippo.io/age v1.3.2
@@ -16,8 +16,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/tidwall/gjson v1.20.0
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/sys v0.47.0
-	golang.org/x/term v0.45.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/term v0.47.0
 )
 
 require (
