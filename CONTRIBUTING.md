@@ -20,7 +20,11 @@ go test ./...                 # unit + end-to-end
 go test -race ./...           # what CI runs
 GOOS=windows go vet ./...     # the Windows build (whoas.exe, the WSL keystore helper) must compile
 gofmt -l .                    # must print nothing
+golangci-lint run ./...       # CI's lint job; config in .golangci.yml (golangci-lint v2)
 ```
+
+No local golangci-lint? `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run ./...`
+works too (it is not a module dependency).
 
 End-to-end tests live in [`tests/`](tests): each `tests/testdata/*.txtar` is a
 [testscript](https://pkg.go.dev/github.com/rogpeppe/go-internal/testscript)
@@ -76,7 +80,7 @@ with what you know.
   changelog is generated from these subjects.
 - Keep a PR to one change. Before opening it:
   - [ ] `go test -race ./...` passes
-  - [ ] `GOOS=windows go vet ./...` passes and `gofmt -l .` is empty
+  - [ ] `GOOS=windows go vet ./...` passes, `gofmt -l .` is empty and `golangci-lint run ./...` is clean
   - [ ] new behaviour has tests; user-visible changes are in the README
   - [ ] no secrets, real tokens or real account names anywhere in the diff
 
