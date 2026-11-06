@@ -282,6 +282,20 @@ identities of the project the agent was started in. A shim sets it again for
 each agent, but a long-lived `whoas run -- <shell>` sets it once: an agent
 started from that shell without a shim keeps the directory the shell started in.
 
+### Agent skill: set up a project
+
+[`skills/whoas-setup/SKILL.md`](skills/whoas-setup/SKILL.md) teaches an agent
+to set up whoas for a project: which identities to `add` vs `import`, the
+profile and trusted `.whoas.yaml`, shims, and MCP proxy entries that don't
+clobber your existing servers. Install it for Claude Code with:
+
+```sh
+mkdir -p ~/.claude/skills && cp -r skills/whoas-setup ~/.claude/skills/
+```
+
+(Codex, Gemini CLI and Copilot CLI also read `~/.agents/skills/`.) Then ask
+"set up whoas for this repo with the acme Vercel account…".
+
 ## Claude Code accounts
 
 Several Claude subscriptions (Pro, Max, Team), chosen per project like any
