@@ -30,10 +30,14 @@ stderr '^whoas: fakehome@work \(account=work\) \[experimental\]$'
 env WHOAS_BANNER=
 
 # concurrent runs of the same identity share one overlay, removed afterwards
-exec whoas fakehome@work sleep 300 whoami &a&
-exec whoas fakehome@work sleep 300 whoami &b&
+exec whoas fakehome@work sleep 1500 whoami &a&
+wait-exists $WORK/run/id/fakehome/work
+exec whoas fakehome@work whoami
+stdout '^account=work$'
+exists $WORK/run/id/fakehome/work
 wait
 ! exists $WORK/run/id/fakehome/work
+! exists $WORK/run/id/fakehome/work.state.json
 
 # the real home session was never touched
 unchanged $HOME/.fakecli/auth.json g
