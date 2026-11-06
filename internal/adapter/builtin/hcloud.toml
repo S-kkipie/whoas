@@ -1,0 +1,10 @@
+name = "hcloud"
+bin  = "hcloud"
+kind = "env-token"
+
+[[secret]]
+env   = "HCLOUD_TOKEN"
+label = "Hetzner Cloud API Token"
+
+[login]
+hint = "Create one at https://console.hetzner.cloud/projects"

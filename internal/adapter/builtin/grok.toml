@@ -1,0 +1,10 @@
+name = "grok"
+bin  = "grok"
+kind = "env-token"
+
+[[secret]]
+env   = "XAI_API_KEY"
+label = "xAI Grok API Key"
+
+[login]
+hint = "Create one at https://console.x.ai/"

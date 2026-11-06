@@ -1,0 +1,22 @@
+name = "crowdin"
+bin  = "crowdin"
+kind = "env-token"
+
+[[secret]]
+env   = "CROWDIN_PERSONAL_TOKEN"
+label = "Crowdin Token"
+
+[[secret]]
+env   = "CROWDIN_PROJECT_ID"
+label = "Crowdin Project ID"
+plain = true
+optional = true
+
+[[secret]]
+env   = "CROWDIN_BASE_URL"
+label = "Crowdin Host Address"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://crowdin.com/settings#api-key"

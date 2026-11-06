@@ -1,0 +1,21 @@
+name = "axiom"
+bin  = "axiom"
+kind = "env-token"
+
+[[secret]]
+env   = "AXIOM_TOKEN"
+label = "Axiom Token"
+
+[[secret]]
+env   = "AXIOM_ORG_ID"
+label = "Axiom Organization"
+plain = true
+
+[[secret]]
+env   = "AXIOM_DEPLOYMENT"
+label = "Axiom Deployment"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://app.axiom.co/settings/profile"

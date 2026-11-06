@@ -1,0 +1,15 @@
+name = "atlas"
+bin  = "atlas"
+kind = "env-token"
+
+[[secret]]
+env   = "MONGODB_ATLAS_PUBLIC_API_KEY"
+label = "MongoDB Atlas Public Key"
+plain = true
+
+[[secret]]
+env   = "MONGODB_ATLAS_PRIVATE_API_KEY"
+label = "MongoDB Atlas Private Key"
+
+[login]
+hint = "Create one at https://www.mongodb.com/docs/atlas/configure-api-access/"

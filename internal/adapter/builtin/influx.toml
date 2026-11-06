@@ -1,0 +1,20 @@
+name = "influx"
+bin  = "influx"
+kind = "env-token"
+
+[[secret]]
+env   = "INFLUX_HOST"
+label = "InfluxDB Host"
+plain = true
+
+[[secret]]
+env   = "INFLUX_ORG"
+label = "InfluxDB Organization"
+plain = true
+
+[[secret]]
+env   = "INFLUX_TOKEN"
+label = "InfluxDB Access Token"
+
+[login]
+hint = "Create one at https://docs.influxdata.com/influxdb/cloud/reference/cli/influx/config/"

@@ -1,0 +1,10 @@
+name = "expo"
+bin  = "expo"
+kind = "env-token"
+
+[[secret]]
+env   = "EXPO_TOKEN"
+label = "Expo Access Token"
+
+[login]
+hint = "Create one at https://expo.dev/accounts/[account]/settings/access-tokens"

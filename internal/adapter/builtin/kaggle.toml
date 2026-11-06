@@ -1,0 +1,15 @@
+name = "kaggle"
+bin  = "kaggle"
+kind = "env-token"
+
+[[secret]]
+env   = "KAGGLE_KEY"
+label = "Kaggle Token"
+
+[[secret]]
+env   = "KAGGLE_USERNAME"
+label = "Kaggle Username"
+plain = true
+
+[login]
+hint = "Create one at https://www.kaggle.com/settings/account"

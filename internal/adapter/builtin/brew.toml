@@ -1,0 +1,10 @@
+name = "brew"
+bin  = "brew"
+kind = "env-token"
+
+[[secret]]
+env   = "HOMEBREW_GITHUB_API_TOKEN"
+label = "Homebrew Personal Access Token"
+
+[login]
+hint = "Create one at https://github.com/settings/tokens/new?scopes=gist,repo,workflow&description=Homebrew"

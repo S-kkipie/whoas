@@ -1,0 +1,20 @@
+name = "lacework"
+bin  = "lacework"
+kind = "env-token"
+
+[[secret]]
+env   = "LW_ACCOUNT"
+label = "Lacework Account"
+plain = true
+
+[[secret]]
+env   = "LW_API_KEY"
+label = "Lacework API Key ID"
+plain = true
+
+[[secret]]
+env   = "LW_API_SECRET"
+label = "Lacework API Secret"
+
+[login]
+hint = "Create one at https://login.lacework.net/ui?redirectUrl=/investigation/settings/apikeys"

@@ -1,0 +1,10 @@
+name = "fastly"
+bin  = "fastly"
+kind = "env-token"
+
+[[secret]]
+env   = "FASTLY_API_TOKEN"
+label = "Fastly API Token"
+
+[login]
+hint = "Create one at https://manage.fastly.com/account/personal/tokens"

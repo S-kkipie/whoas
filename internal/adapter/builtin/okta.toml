@@ -1,0 +1,15 @@
+name = "okta"
+bin  = "okta"
+kind = "env-token"
+
+[[secret]]
+env   = "OKTA_CLIENT_TOKEN"
+label = "Okta Token"
+
+[[secret]]
+env   = "OKTA_CLIENT_ORGURL"
+label = "Okta Org URL"
+plain = true
+
+[login]
+hint = "Create one at https://developer.okta.com/docs/guides/create-an-api-token/main/"

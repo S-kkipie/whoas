@@ -1,0 +1,14 @@
+name = "binance-cli"
+bin  = "binance-cli"
+kind = "env-token"
+
+[[secret]]
+env   = "BINANCE_API_KEY"
+label = "Binance API Key"
+
+[[secret]]
+env   = "BINANCE_API_SECRET"
+label = "Binance API Secret"
+
+[login]
+hint = "Create one at https://www.binance.com/en/my/settings/api-management"

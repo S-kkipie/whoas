@@ -268,3 +268,37 @@ func TestDirOverlayBuiltins(t *testing.T) {
 	require.Equal(t, []string{"credsStore", "credHelpers"}, docker.Dir.HelperKeys)
 	require.Equal(t, []string{"DOCKER_CONFIG=/o"}, docker.InjectEnv("/o"))
 }
+
+func TestTokenBuiltins(t *testing.T) {
+	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
+	require.NoError(t, err, "every built-in must load, validate and have a unique bin")
+
+	tokens := 0
+	for _, n := range r.Names() {
+		a, _ := r.Get(n)
+		if a.Kind != KindEnvToken {
+			continue
+		}
+		tokens++
+		required := 0
+		for _, s := range a.Secrets {
+			if !s.Optional {
+				required++
+			}
+		}
+		require.Positive(t, required, "%s needs at least one required secret", n)
+	}
+	require.GreaterOrEqual(t, tokens, 60)
+
+	supabase, ok := r.Get("supabase")
+	require.True(t, ok)
+	require.Equal(t, []Secret{{Env: "SUPABASE_ACCESS_TOKEN", Label: "Supabase Access Token"}}, supabase.Secrets)
+	terraform, _ := r.Get("terraform")
+	require.Equal(t, "TF_TOKEN_app_terraform_io", terraform.Secrets[0].Env)
+	stripe, _ := r.Get("stripe")
+	require.Equal(t, "STRIPE_API_KEY", stripe.Secrets[0].Env)
+	for _, n := range []string{"claude", "agent", "psql"} {
+		_, ok := r.Get(n)
+		require.False(t, ok, "%s is intentionally not a built-in", n)
+	}
+}

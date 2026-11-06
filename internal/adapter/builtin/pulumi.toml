@@ -1,0 +1,16 @@
+name = "pulumi"
+bin  = "pulumi"
+kind = "env-token"
+
+[[secret]]
+env   = "PULUMI_ACCESS_TOKEN"
+label = "Pulumi Token"
+
+[[secret]]
+env   = "PULUMI_BACKEND_URL"
+label = "Pulumi Host"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://app.pulumi.com/account/tokens"

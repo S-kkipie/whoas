@@ -1,0 +1,10 @@
+name = "zapier"
+bin  = "zapier"
+kind = "env-token"
+
+[[secret]]
+env   = "ZAPIER_DEPLOY_KEY"
+label = "Zapier Deploy Key"
+
+[login]
+hint = "Create one at https://developer.zapier.com/partner-settings/deploy-keys/"

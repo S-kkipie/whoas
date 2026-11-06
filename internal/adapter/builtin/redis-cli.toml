@@ -1,0 +1,10 @@
+name = "redis-cli"
+bin  = "redis-cli"
+kind = "env-token"
+
+[[secret]]
+env   = "REDISCLI_AUTH"
+label = "Redis User Credentials"
+
+[login]
+hint = "Create one at https://redis.io/docs/ui/cli/#host-port-password-and-database"

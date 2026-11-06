@@ -1,0 +1,10 @@
+name = "civo"
+bin  = "civo"
+kind = "env-token"
+
+[[secret]]
+env   = "CIVO_TOKEN"
+label = "Civo API Key"
+
+[login]
+hint = "Create one at https://dashboard.civo.com/security"

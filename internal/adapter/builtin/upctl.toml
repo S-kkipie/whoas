@@ -1,0 +1,15 @@
+name = "upctl"
+bin  = "upctl"
+kind = "env-token"
+
+[[secret]]
+env   = "UPCLOUD_USERNAME"
+label = "UpCloud Username"
+plain = true
+
+[[secret]]
+env   = "UPCLOUD_PASSWORD"
+label = "UpCloud Password"
+
+[login]
+hint = "Create one at https://hub.upcloud.com/people/accounts"

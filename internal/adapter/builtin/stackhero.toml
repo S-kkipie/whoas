@@ -1,0 +1,10 @@
+name = "stackhero"
+bin  = "stackhero"
+kind = "env-token"
+
+[[secret]]
+env   = "STACKHERO_TOKEN"
+label = "Stackhero Access Token"
+
+[login]
+hint = "Create one at https://dashboard.stackhero.io/account/"

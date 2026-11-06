@@ -1,0 +1,10 @@
+name = "openai"
+bin  = "openai"
+kind = "env-token"
+
+[[secret]]
+env   = "OPENAI_API_KEY"
+label = "OpenAI API Key"
+
+[login]
+hint = "Create one at https://platform.openai.com/account/api-keys"

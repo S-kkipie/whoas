@@ -1,0 +1,10 @@
+name = "flyctl"
+bin  = "flyctl"
+kind = "env-token"
+
+[[secret]]
+env   = "FLY_ACCESS_TOKEN"
+label = "Fly.io Access Token"
+
+[login]
+hint = "Create one at https://fly.io/user/personal_access_tokens"

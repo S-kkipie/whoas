@@ -1,0 +1,22 @@
+name = "glab"
+bin  = "glab"
+kind = "env-token"
+
+[[secret]]
+env   = "GITLAB_TOKEN"
+label = "GitLab Token"
+
+[[secret]]
+env   = "GITLAB_HOST"
+label = "GitLab Host"
+plain = true
+optional = true
+
+[[secret]]
+env   = "GITLAB_API_HOST"
+label = "GitLab API Host"
+plain = true
+optional = true
+
+[login]
+hint = "Create one at https://gitlab.com/-/profile/personal_access_tokens"

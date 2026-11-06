@@ -1,0 +1,10 @@
+name = "gemini"
+bin  = "gemini"
+kind = "env-token"
+
+[[secret]]
+env   = "GEMINI_API_KEY"
+label = "Google Gemini CLI API Key"
+
+[login]
+hint = "Create one at https://aistudio.google.com/app/apikey"
