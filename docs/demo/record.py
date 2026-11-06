@@ -1,36 +1,51 @@
 #!/usr/bin/env python3
 """Record the README demo as an asciicast v2 file.
 
-Usage: record.py SANDBOX OUT.cast   (demo.sh runs it; SANDBOX/bin holds whoas and gh)
+Usage: record.py SANDBOX OUT.cast   (demo.sh runs it; SANDBOX/bin holds whoas,
+vercel and gcloud)
 
 Everything happens inside SANDBOX: a throwaway HOME, whoas config/data/runtime
-dirs, a master key generated for this run, a fake gh that answers from its
-hosts.yml (no network), and two fake GitHub logins named like the README's,
-octocat and octo-corp. The commands really run, in a pty so whoas prints its
-banner; only the typing is simulated. Standard library only.
+dirs, a master key generated for this run, fake vercel and gcloud CLIs that
+answer from the session files whoas materializes (no network), fake logins for
+a made-up developer (ana) and her client (client.dev), and fake PostHog and
+Linear MCP keys. The commands really run, in a pty so whoas prints its banner;
+only the typing is simulated. Standard library only.
 """
 
 import json
 import os
 import pty
 import random
+import re
 import secrets
+import shutil
 import subprocess
 import sys
 
-COLS, ROWS = 80, 24  # tall enough that nothing scrolls away
+COLS, ROWS = 80, 24
 
-# (command, seconds to hold after its output); "  # " starts a comment shown in grey
+# (line typed at the prompt, seconds to hold after its output). A "# " line is a
+# shell comment: typed in grey, it explains the command after it and runs
+# nothing. A command may go on after a backslash-newline, shown on a "> "
+# continuation line as an interactive shell would.
 SCENES = [
+    ("# your saved accounts (each session is sealed in an encrypted vault)", 0.3),
     ("whoas ls", 2.4),
-    ("whoas gh@work api user --jq .login", 1.4),
-    ("whoas gh@personal api user --jq .login", 2.0),
-    ("whoas profile set work gh@work claude@work", 1.4),
+    ("# run a CLI as a specific account", 0.3),
+    ("whoas vercel@client whoami", 1.2),
+    ("whoas gcloud@personal config get-value account", 1.6),
+    ("# group the client's accounts into a profile", 0.3),
+    ("whoas profile set client vercel@client gcloud@client \\\n    mcp-posthog@client mcp-linear@client", 1.2),
+    ("# pin that profile to the project folder", 0.3),
     ("cd ~/code/client", 0.4),
-    ("echo 'profile: work' > .whoas.yaml", 0.5),
-    ("whoas trust", 1.6),
-    ("gh api user --jq .login   # plain gh, through the shim", 2.2),
-    ("whoas which gh", 4.0),
+    ("echo 'profile: client' > .whoas.yaml", 0.5),
+    ("whoas trust", 1.4),
+    ("# plain commands now use the project's accounts (through the shims)", 0.3),
+    ("vercel whoami", 1.2),
+    ("gcloud config get-value account", 1.8),
+    ("# MCP servers in Claude Code, Codex or Cursor get the project's keys", 0.3),
+    ("whoas which mcp-posthog", 0.6),
+    ("whoas which mcp-linear", 3.2),
 ]
 
 # --- age identity (bech32, as age-keygen prints it) -------------------------
@@ -89,31 +104,49 @@ def sandbox(sb):
     return home, env
 
 
-def gh_login(home, user):
-    """What `gh auth login --insecure-storage` would leave behind (fake token)."""
-    d = os.path.join(home, ".config/gh")
-    os.makedirs(d, mode=0o700, exist_ok=True)
-    token = "fake-demo-token"
-    with open(os.path.join(d, "hosts.yml"), "w") as f:
-        f.write(
-            f"github.com:\n    users:\n        {user}:\n            oauth_token: {token}\n"
-            f"    git_protocol: https\n    user: {user}\n    oauth_token: {token}\n"
-        )
+def write(path, text):
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+
+
+def vercel_login(home, alias):
+    """What `vercel login` would leave behind; fake-vercel knows these tokens."""
+    d = os.path.join(home, ".local/share/com.vercel.cli")
+    shutil.rmtree(d, ignore_errors=True)
+    write(os.path.join(d, "auth.json"), json.dumps({"token": f"fake-demo-token-vercel-{alias}"}, indent=2) + "\n")
+    write(os.path.join(d, "config.json"), json.dumps({"currentTeam": f"team_{alias}", "telemetry": {"enabled": False}}, indent=2) + "\n")
+
+
+def gcloud_login(home, account, project):
+    """What `gcloud auth login` would leave behind (fake credentials)."""
+    d = os.path.join(home, ".config/gcloud")
+    shutil.rmtree(d, ignore_errors=True)
+    write(os.path.join(d, "active_config"), "default")
+    write(os.path.join(d, "configurations/config_default"), f"[core]\naccount = {account}\nproject = {project}\n")
+    adc = {"type": "authorized_user", "client_id": "fake-demo", "refresh_token": "fake-demo-token-gcloud"}
+    write(os.path.join(d, "legacy_credentials", account, "adc.json"), json.dumps(adc, indent=2) + "\n")
 
 
 def setup(env, home):
-    """The part the demo doesn't show: capture two gh logins and a claude token."""
+    """The part the demo doesn't show: capture two vercel and two gcloud logins,
+    add a PostHog and a Linear MCP key, install the shims."""
 
     def whoas(*args, stdin=None):
         r = subprocess.run(["whoas", *args], env=env, cwd=home, input=stdin, capture_output=True, text=True)
         if r.returncode != 0:
             sys.exit(f"record.py: setup: whoas {' '.join(args)} failed ({r.returncode}):\n{r.stderr}")
 
-    gh_login(home, "octo-corp")
-    whoas("import", "gh", "work")
-    gh_login(home, "octocat")  # gh's own session stays on octocat
-    whoas("import", "gh", "personal")
-    whoas("add", "claude", "work", "--stdin", stdin="sk-ant-oat01-fake-demo-token\n")
+    vercel_login(home, "client")
+    whoas("import", "vercel", "client")
+    vercel_login(home, "personal")  # vercel's own session stays on personal
+    whoas("import", "vercel", "personal")
+    gcloud_login(home, "ana@client.dev", "client-prod")
+    whoas("import", "gcloud", "client")
+    gcloud_login(home, "ana@gmail.com", "ana-side-project")
+    whoas("import", "gcloud", "personal")
+    whoas("add", "mcp-posthog", "client", "--stdin", stdin="fake-demo-token-posthog\n")
+    whoas("add", "mcp-linear", "client", "--stdin", stdin="fake-demo-token-linear\n")
     whoas("shims", "install")
 
 
@@ -158,26 +191,35 @@ class Cast:
 
 
 def prompt(cwd, home):
-    shown = "~" + cwd[len(home):] if cwd.startswith(home) else cwd
+    """The working directory's last element, like zsh's %1~ ("~" at home)."""
+    shown = "~" if cwd == home else os.path.basename(cwd)
     return f"\x1b[1;34m{shown}\x1b[0m \x1b[1;32m$\x1b[0m "
+
+
+PS2 = "\x1b[1;32m>\x1b[0m "
+GREY = "\x1b[38;5;246m"
 
 
 def record(env, home):
     rnd = random.Random(7)  # same typing rhythm on every run
     cast = Cast()
     cwd = home
-    for cmd, hold in SCENES:
+    for code, hold in SCENES:
         cast.out(prompt(cwd, home), 0.0)
-        code, _, comment = cmd.partition("  # ")
-        code = code.rstrip()
-        cast.t += 0.5
-        for ch in code:
-            cast.out(ch, rnd.uniform(0.035, 0.075))
-        if comment:
-            cast.out("\x1b[90m", 0.0)
-            for ch in "   # " + comment:
-                cast.out(ch, rnd.uniform(0.015, 0.03))
+        if code.startswith("# "):  # a comment: typed a little faster, runs nothing
+            cast.out(GREY, 0.25)
+            for ch in code:
+                cast.out(ch, rnd.uniform(0.012, 0.022))
             cast.out("\x1b[0m")
+            cast.out("\r\n", 0.25)
+            cast.t += hold
+            continue
+        cast.t += 0.3
+        for i, part in enumerate(code.split("\n")):
+            if i:
+                cast.out("\r\n" + PS2, 0.2)
+            for ch in part:
+                cast.out(ch, rnd.uniform(0.022, 0.042))
         cast.out("\r\n", 0.25)
         if code.startswith("cd "):
             cwd = os.path.normpath(code[3:].replace("~", home, 1))
@@ -202,13 +244,18 @@ def main():
     setup(env, home)
     cast = record(env, home)
 
-    # nothing from the recording machine or the fake secrets may reach the GIF
+    # nothing from the recording machine or the fake secrets may reach the GIF,
+    # nor anything shaped like a real Anthropic/OpenAI, PostHog or Linear key
     text = "".join(e[2] for e in cast.events)
-    leaks = [s for s in (sb, real_home, env["WHOAS_MASTER_KEY"], "fake-demo-token", "sk-ant-") if s and s in text]
+    leaks = [s for s in (sb, real_home, env["WHOAS_MASTER_KEY"], "fake-demo-token", "sk-", "phx_", "lin_api_") if s and s in text]
     if len(real_user) > 2 and real_user in text:
         leaks.append("$USER")
     if leaks:
         sys.exit(f"record.py: the recording would show {leaks}; refusing to write it")
+    # and no line may wrap: the GIF is only COLS wide
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", text).replace("\r", "").split("\n"):
+        if len(line) > COLS:
+            sys.exit(f"record.py: this line is wider than {COLS} columns:\n{line}")
 
     header = {"version": 2, "width": COLS, "height": ROWS, "title": "whoas", "env": {"TERM": "xterm-256color", "SHELL": "/bin/sh"}}
     with open(dest, "w") as f:

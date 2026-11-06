@@ -1,0 +1,21 @@
+#!/bin/sh
+# A stand-in for gcloud in the demo sandbox. `gcloud config get-value account`
+# reads the active configuration under CLOUDSDK_CONFIG (default ~/.config/gcloud),
+# the way the real gcloud does, and never touches the network.
+set -eu
+dir=${CLOUDSDK_CONFIG:-$HOME/.config/gcloud}
+config=$(cat "$dir/active_config" 2>/dev/null || echo default)
+case "$*" in
+	"config get-value "*)
+		value=$(sed -n "s/^$3 *= *//p" "$dir/configurations/config_$config" 2>/dev/null | head -n 1)
+		if [ -z "$value" ]; then
+			echo "(unset)" >&2
+		else
+			printf '%s\n' "$value"
+		fi
+		;;
+	*)
+		echo "fake gcloud: unsupported: $*" >&2
+		exit 1
+		;;
+esac

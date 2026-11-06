@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="whoas demo: whoas ls lists gh@personal (octocat), gh@work (octo-corp) and claude@work; whoas gh@work and gh@personal print different logins; a trusted .whoas.yaml makes plain gh resolve to gh@work through the shim; whoas which gh explains why" width="790">
+  <img src="docs/demo.gif" alt="whoas demo: whoas ls lists personal and client accounts for vercel and gcloud plus PostHog and Linear MCP keys; whoas vercel@client and whoas gcloud@personal run each CLI as that account; a client profile pinned to the project with a trusted .whoas.yaml makes plain vercel and gcloud use the client accounts through the shims, and whoas which shows the PostHog and Linear MCP servers get the project's keys too" width="790">
 </p>
 
 ```console
