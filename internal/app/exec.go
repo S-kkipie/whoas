@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/project"
 	"github.com/S-kkipie/whoas/internal/ref"
 	"github.com/S-kkipie/whoas/internal/resolve"
@@ -87,25 +88,42 @@ func runProvider(e *env, req runRequest) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := e.dirs.EnsureRuntime(); err != nil {
-		return 0, err
-	}
 	meta, _ := v.ReadMeta(res.Ref)
-	banner(res.Ref, meta.Account)
-	result, err := supervisor.Run(context.Background(), supervisor.Plan{
-		Ref:       res.Ref,
-		Adapter:   a,
-		Bin:       bin,
-		Args:      req.args,
-		Global:    a.GlobalDir(e.vars()),
-		RunBase:   e.dirs.RunBase(res.Ref.Provider, res.Ref.Alias),
-		Vault:     v,
-		Decrypter: d,
-		Env:       append(os.Environ(), "WHOAS_DEPTH="+strconv.Itoa(depth+1)),
-		Stdin:     os.Stdin,
-		Stdout:    os.Stdout,
-		Stderr:    os.Stderr,
-	})
+	banner(res.Ref, meta.Account, a.Experimental)
+	childEnv := append(os.Environ(), "WHOAS_DEPTH="+strconv.Itoa(depth+1))
+	var result supervisor.Result
+	if a.Kind == adapter.KindEnvToken {
+		result, err = supervisor.RunEnv(context.Background(), supervisor.EnvPlan{
+			Ref:       res.Ref,
+			Adapter:   a,
+			Bin:       bin,
+			Args:      req.args,
+			Vault:     v,
+			Decrypter: d,
+			Env:       childEnv,
+			Stdin:     os.Stdin,
+			Stdout:    os.Stdout,
+			Stderr:    os.Stderr,
+		})
+	} else {
+		if err := e.dirs.EnsureRuntime(); err != nil {
+			return 0, err
+		}
+		result, err = supervisor.Run(context.Background(), supervisor.Plan{
+			Ref:       res.Ref,
+			Adapter:   a,
+			Bin:       bin,
+			Args:      req.args,
+			Global:    a.GlobalDir(e.vars()),
+			RunBase:   e.dirs.RunBase(res.Ref.Provider, res.Ref.Alias),
+			Vault:     v,
+			Decrypter: d,
+			Env:       childEnv,
+			Stdin:     os.Stdin,
+			Stdout:    os.Stdout,
+			Stderr:    os.Stderr,
+		})
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -188,10 +206,14 @@ func exitCodeFor(err error) int {
 
 // banner prints the identity on stderr when it is a terminal, or always /
 // never per WHOAS_BANNER.
-func banner(r ref.Ref, account string) {
+func banner(r ref.Ref, account string, experimental bool) {
 	mode := os.Getenv("WHOAS_BANNER")
 	if mode == "never" || (mode != "always" && !term.IsTerminal(int(os.Stderr.Fd()))) {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "whoas: %s%s\n", r, accountSuffix(account))
+	tag := ""
+	if experimental {
+		tag = " [experimental]"
+	}
+	fmt.Fprintf(os.Stderr, "whoas: %s%s%s\n", r, accountSuffix(account), tag)
 }
