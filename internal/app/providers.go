@@ -16,11 +16,15 @@ type providerRow struct {
 	Name, Bin, Kind, Source, Installed string
 }
 
-// providerRows lists adapters; unless all is set, only installed CLIs are
-// kept and hidden counts the rest.
+// providerRows lists adapters; unless all is set, only installed CLIs (and
+// mcp adapters, which need no binary) are kept and hidden counts the rest.
 func providerRows(reg *adapter.Registry, find func(bin string) (string, error), all bool) (rows []providerRow, hidden int) {
 	for _, n := range reg.Names() {
 		a, _ := reg.Get(n)
+		if a.Kind == adapter.KindMCP {
+			rows = append(rows, providerRow{Name: a.Name, Bin: "-", Kind: string(a.Kind), Source: reg.Source(n), Installed: "n/a"})
+			continue
+		}
 		installed := "-"
 		if p, err := find(a.Bin); err == nil {
 			installed = p
@@ -42,7 +46,7 @@ func newProvidersCmd() *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
 		Use:   "providers",
-		Short: "List the adapters for installed CLIs (--all for every adapter)",
+		Short: "List the adapters for installed CLIs and MCP servers (--all for every adapter)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := loadEnv()

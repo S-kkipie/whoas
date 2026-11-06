@@ -1,0 +1,14 @@
+name = "claude"
+bin  = "claude"
+kind = "env-token"
+# These outrank CLAUDE_CODE_OAUTH_TOKEN (or switch to API billing / a cloud provider).
+unset_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_MANTLE"]
+
+[[secret]]
+env   = "CLAUDE_CODE_OAUTH_TOKEN"
+label = "Claude subscription token"
+pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"
+
+[login]
+cmd  = ["claude", "setup-token"]
+hint = "Pick the account in your browser, then paste the token claude prints."

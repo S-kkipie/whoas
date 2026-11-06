@@ -1,0 +1,36 @@
+# whoas mcp setup registers the proxy through the agent's own CLI (fake
+# claude and codex record their argv) or prints the entry for other agents.
+env PATH=$FAKEAGENTS:$PATH
+
+exec whoas mcp setup posthog --agent claude
+stdout '^claude mcp add-json --scope user posthog ''\{"type":"stdio","command":"/\S+/whoas","args":\["mcp","proxy","posthog"\]\}''$'
+grep '^\{"type":"stdio","command":"/\S+/whoas","args":\["mcp","proxy","posthog"\]\}$' $HOME/.fake-claude/posthog
+
+# an existing entry is never overwritten silently
+! exec whoas mcp setup posthog --agent claude
+stderr 'claude already has an MCP server named "posthog" \(see: claude mcp get posthog\); use --replace to replace it'
+
+# --replace removes it, then adds; --alias pins the identity
+exec whoas mcp setup mcp-posthog --agent claude --scope local --replace --alias acme
+stdout '^claude mcp remove posthog$'
+stdout '^claude mcp add-json --scope local posthog ''\{.*"args":\["mcp","proxy","mcp-posthog@acme"\]\}''$'
+grep '"args":\["mcp","proxy","mcp-posthog@acme"\]' $HOME/.fake-claude/posthog
+
+# codex has no scopes
+exec whoas mcp setup linear --agent codex
+stdout '^codex mcp add linear -- /\S+/whoas mcp proxy linear$'
+grep '^/\S+/whoas mcp proxy linear$' $HOME/.fake-codex/linear
+! exec whoas mcp setup linear --agent codex --scope user
+stderr 'codex has no scopes'
+exec whoas mcp setup linear --agent codex --replace
+stdout '^codex mcp remove linear$'
+
+grep '^claude mcp get posthog$' $HOME/agent-argv.log
+grep '^claude mcp remove posthog$' $HOME/agent-argv.log
+grep '^codex mcp add linear -- /\S+/whoas mcp proxy linear$' $HOME/agent-argv.log
+
+# --print: the generic stdio entry for any other agent
+exec whoas mcp setup posthog --print
+stdout '^    "posthog": \{$'
+stdout '^      "command": "/\S+/whoas",$'
+stdout '^        "proxy",$'

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/S-kkipie/whoas/internal/adapter"
 	"github.com/S-kkipie/whoas/internal/ref"
 	"github.com/S-kkipie/whoas/internal/resolve"
 )
@@ -27,12 +28,24 @@ func newWhichCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := e.adapter(provider); err != nil {
+			a, err := e.adapter(provider)
+			if err != nil {
 				return err
 			}
-			res, err := e.resolveIdentity(runRequest{provider: provider, alias: alias, profileFlag: profile, explicit: true})
+			req := runRequest{provider: provider, alias: alias, profileFlag: profile, explicit: true}
+			if a.Kind == adapter.KindMCP {
+				// as `whoas mcp proxy` would resolve it here
+				if req.contextDir, err = mcpContextDir(); err != nil {
+					return err
+				}
+			}
+			res, err := e.resolveIdentity(req)
 			if errors.Is(err, resolve.ErrUnresolved) {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s: no identity (shims pass through to the global CLI)\n", provider)
+				if a.Kind == adapter.KindMCP {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: no identity (whoas mcp proxy exits 2)\n", provider)
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: no identity (shims pass through to the global CLI)\n", provider)
+				}
 				return &exitError{code: 1}
 			}
 			if err != nil {

@@ -17,13 +17,17 @@ var (
 	masterKey string
 )
 
-// TestMain builds the real whoas binary and the fake CLI once per test run.
+// TestMain builds the real whoas binary and the test helpers (fake CLI, fake
+// agents, fake MCP server, MCP client) once per test run.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "whoas-e2e-bin-")
 	if err != nil {
 		panic(err)
 	}
 	binDir = dir
+	if err := os.MkdirAll(filepath.Join(dir, "agents"), 0o700); err != nil {
+		panic(err)
+	}
 	for _, b := range []struct{ out, pkg string }{
 		{"whoas", "github.com/S-kkipie/whoas/cmd/whoas"},
 		{"fakecli", "github.com/S-kkipie/whoas/tests/fakecli"},
@@ -31,6 +35,13 @@ func TestMain(m *testing.M) {
 		{"fakehome", "github.com/S-kkipie/whoas/tests/fakecli"},
 		{"faketok", "github.com/S-kkipie/whoas/tests/fakecli"},
 		{"fakedock", "github.com/S-kkipie/whoas/tests/fakecli"},
+		{"fakeclaude", "github.com/S-kkipie/whoas/tests/fakecli"},
+		// fake claude and codex agents, only on PATH where a script adds $FAKEAGENTS
+		{filepath.Join("agents", "claude"), "github.com/S-kkipie/whoas/tests/fakecli"},
+		{filepath.Join("agents", "codex"), "github.com/S-kkipie/whoas/tests/fakecli"},
+		// a Streamable HTTP MCP server and an MCP client
+		{"fakemcp", "github.com/S-kkipie/whoas/tests/fakemcp"},
+		{"mcpcall", "github.com/S-kkipie/whoas/tests/mcpcall"},
 	} {
 		cmd := exec.Command("go", "build", "-o", filepath.Join(dir, b.out), b.pkg)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
@@ -63,6 +74,7 @@ func TestScripts(t *testing.T) {
 				}
 			}
 			env.Setenv("PATH", binDir+string(os.PathListSeparator)+env.Getenv("PATH"))
+			env.Setenv("FAKEAGENTS", filepath.Join(binDir, "agents"))
 			env.Setenv("HOME", home)
 			env.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 			env.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))

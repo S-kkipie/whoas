@@ -16,7 +16,16 @@
 //	trap           wait for SIGTERM or SIGINT, print "trapped=TERM|INT", exit 42
 //	exit N         exit with code N
 //	envkey NAME    print "NAME=set" or "NAME=unset" (never the value)
+//	env NAME       print "NAME=<value>" (only for non-secret variables)
+//	prefix NAME    print "NAME=<value up to its first '-'>" or "NAME=unset"
+//	setup-token    create $HOME/setup-token-ran, print "setup-token ran", exit
+//	               $FAKECLI_SETUP_EXIT (default 0), like claude setup-token
 //	tokwho         print "account=<part of $FAKETOK_KEY before '-'>"; exit 3 without it
+//
+// Named claude or codex, it is a fake agent instead: it appends its argv to
+// $HOME/agent-argv.log and keeps MCP servers as files in $HOME/.fake-<name>
+// ("mcp get|remove NAME", claude "mcp add-json [--scope S] NAME JSON",
+// codex "mcp add NAME -- CMD...").
 package main
 
 import (
@@ -101,7 +110,62 @@ func intArg(args []string, op string) (int, []string) {
 	return n, args[1:]
 }
 
+// agentMain imitates the MCP commands of claude and codex.
+func agentMain(name string, args []string) {
+	home := os.Getenv("HOME")
+	f, err := os.OpenFile(filepath.Join(home, "agent-argv.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		fail("%v", err)
+	}
+	fmt.Fprintln(f, name+" "+strings.Join(args, " "))
+	f.Close()
+	if len(args) < 3 || args[0] != "mcp" {
+		fail("%s: unsupported arguments %q", name, args)
+	}
+	dir := filepath.Join(home, ".fake-"+name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		fail("%v", err)
+	}
+	var server, entry string
+	switch args[1] {
+	case "get", "remove":
+		server = args[len(args)-1]
+		if _, err := os.Stat(filepath.Join(dir, server)); err != nil {
+			fmt.Fprintf(os.Stderr, "No MCP server named %q\n", server)
+			os.Exit(1)
+		}
+		if args[1] == "remove" {
+			if err := os.Remove(filepath.Join(dir, server)); err != nil {
+				fail("%v", err)
+			}
+		}
+		return
+	case "add-json":
+		server, entry = args[len(args)-2], args[len(args)-1]
+	case "add":
+		server = args[2]
+		if len(args) < 5 || args[3] != "--" {
+			fail("codex mcp add NAME -- CMD...")
+		}
+		entry = strings.Join(args[4:], " ")
+	default:
+		fail("%s: unsupported mcp command %q", name, args[1])
+	}
+	p := filepath.Join(dir, server)
+	if _, err := os.Stat(p); err == nil {
+		fmt.Fprintf(os.Stderr, "MCP server %s already exists\n", server)
+		os.Exit(1)
+	}
+	if err := os.WriteFile(p, []byte(entry+"\n"), 0o600); err != nil {
+		fail("%v", err)
+	}
+}
+
 func main() {
+	if name := filepath.Base(os.Args[0]); name == "claude" || name == "codex" {
+		agentMain(name, os.Args[1:])
+		return
+	}
 	args := os.Args[1:]
 	for len(args) > 0 {
 		op := args[0]
@@ -174,6 +238,29 @@ func main() {
 			}
 			fmt.Printf("%s=%s\n", args[0], state)
 			args = args[1:]
+		case "env":
+			if len(args) < 1 {
+				fail("env needs NAME")
+			}
+			fmt.Printf("%s=%s\n", args[0], os.Getenv(args[0]))
+			args = args[1:]
+		case "prefix":
+			if len(args) < 1 {
+				fail("prefix needs NAME")
+			}
+			v, _, _ := strings.Cut(os.Getenv(args[0]), "-")
+			if v == "" {
+				v = "unset"
+			}
+			fmt.Printf("%s=%s\n", args[0], v)
+			args = args[1:]
+		case "setup-token":
+			if err := os.WriteFile(filepath.Join(os.Getenv("HOME"), "setup-token-ran"), nil, 0o600); err != nil {
+				fail("%v", err)
+			}
+			fmt.Println("setup-token ran")
+			code, _ := strconv.Atoi(os.Getenv("FAKECLI_SETUP_EXIT"))
+			os.Exit(code)
 		case "tokwho":
 			key := os.Getenv("FAKETOK_KEY")
 			if key == "" {

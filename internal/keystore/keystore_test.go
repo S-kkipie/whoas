@@ -156,3 +156,41 @@ func TestWSLStore(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "AGE-SECRET-KEY-1W", got)
 }
+
+func TestNoPrompt(t *testing.T) {
+	scryptWorkFactor = 10
+	env := map[string]string{"WHOAS_PASSPHRASE": "correct horse"}
+	s := newPassphraseStore(t.TempDir(), getenvFrom(env))
+	require.NoError(t, s.Set("AGE-SECRET-KEY-1ABC"))
+	s.prompt = func(string) (string, error) {
+		t.Fatal("NoPrompt must never ask")
+		return "", nil
+	}
+	quiet := NoPrompt(s)
+	got, err := quiet.Get()
+	require.NoError(t, err, "WHOAS_PASSPHRASE needs no terminal")
+	require.Equal(t, "AGE-SECRET-KEY-1ABC", got)
+
+	delete(env, "WHOAS_PASSPHRASE")
+	_, err = quiet.Get()
+	require.ErrorIs(t, err, ErrNeedsTerminal)
+
+	e := envStore{key: "k"}
+	require.Equal(t, Store(e), NoPrompt(e), "stores that never prompt are unchanged")
+}
+
+// TestNoPromptNonPassphraseStores verifies that NoPrompt returns non-passphrase
+// stores unchanged (same value/identity), since they never prompt on a terminal.
+func TestNoPromptNonPassphraseStores(t *testing.T) {
+	// envStore: never prompts, returned unchanged
+	e := envStore{key: "AGE-SECRET-KEY-1X"}
+	require.Equal(t, Store(e), NoPrompt(e))
+
+	// osStore: never prompts, returned unchanged
+	o := osStore{}
+	require.Equal(t, Store(o), NoPrompt(o))
+
+	// wslStore: never prompts, returned unchanged
+	w := newWSLStore("C:\\whoas.exe")
+	require.Equal(t, Store(w), NoPrompt(w))
+}

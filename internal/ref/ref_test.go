@@ -21,6 +21,8 @@ func TestSplit(t *testing.T) {
 		{"../etc@x", "", "", false},
 		{"gh@../x", "", "", false},
 		{"__complete", "", "", false},
+		{"mcp", "", "", false},
+		{"mcp-posthog@acme", "mcp-posthog", "acme", true},
 	}
 	for _, c := range cases {
 		p, a, err := Split(c.in)

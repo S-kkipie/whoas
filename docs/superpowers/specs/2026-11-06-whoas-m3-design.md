@@ -1,7 +1,7 @@
 # whoas M3 — Design Addendum
 
 **Date:** 2026-11-06
-**Status:** Approved (design), pending implementation plan
+**Status:** Approved (design); implementation plan [`2026-11-06-whoas-m3.md`](../plans/2026-11-06-whoas-m3.md). Facts checked during planning are folded in under [Amendments](#amendments-after-the-fact-checks).
 **Author:** Adrian Issac (GitHub: S-kkipie)
 **Extends:** [`2026-11-05-whoas-design.md`](2026-11-05-whoas-design.md) (M1) and [`2026-11-06-whoas-m2-design.md`](2026-11-06-whoas-m2-design.md) (M2). Everything not stated here stays as in M1/M2.
 
@@ -39,11 +39,12 @@ name = "claude"
 bin  = "claude"
 kind = "env-token"
 # These outrank CLAUDE_CODE_OAUTH_TOKEN (or switch to API billing / a cloud provider).
-unset_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"]
+unset_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_MANTLE"]
 
 [[secret]]
 env   = "CLAUDE_CODE_OAUTH_TOKEN"
 label = "Claude subscription token"
+pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"
 
 [login]
 cmd  = ["claude", "setup-token"]
@@ -58,12 +59,14 @@ M2 forbade `login.cmd` on `env-token` adapters. M3 allows it.
 - **`--stdin`:** with `whoas add <p> <alias> --stdin`, `login.cmd` is **not** run. That form is for scripts.
 
 ### Behaviour
+- **Token format:** the built-in secret has `pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"`; `add` (prompt or `--stdin`) and `import` reject a value that does not match before sealing, so a token the terminal wrapped over two lines cannot be sealed as a fragment. The error never prints the value.
 - **`whoas add claude max`:** shows the hint, runs `claude setup-token`, then prompts `Claude subscription token (CLAUDE_CODE_OAUTH_TOKEN): ` with echo off, and seals.
   - No whoami: Claude has none that doesn't spend quota, so the account label is empty.
   - Generating a token does not touch the user's saved `/login` or running sessions.
 - **Run** (explicit `whoas claude@max`, a `claude` shim with a profile or `.whoas.yaml`, `whoas run`): the M2 env-token path (`RunEnv`). Concurrent sessions with different accounts work, since there is no lock.
 - **No identity for `claude` in the chosen source:** the shim passes through to the user's normal login (M1 rule).
 - **`whoas doctor`:** warns when `settings.json` (in `$CLAUDE_CONFIG_DIR` or `~/.claude`) sets `apiKeyHelper`. An `apiKeyHelper` outranks the token and cannot be cleared from the environment.
+  - It also warns when that file's `env` object sets `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` or any `CLAUDE_CODE_USE_*`: Claude Code applies that block over the environment whoas prepared. Key names only, never values; a file that is not valid JSON is skipped.
 
 ## MCP servers (any agent)
 
@@ -126,9 +129,9 @@ PostHog EU users override `mcp-posthog` with a user adapter pointing at their re
   - **Config:** command = absolute path of the running whoas; args = `["mcp","proxy","<server>"]`, or `["mcp","proxy","<provider>@<alias>"]` with `--alias`.
   - **claude:** `claude mcp add-json --scope <scope> <server> '{"type":"stdio","command":…,"args":[…]}'`. Default scope: `user`.
   - **codex:** `codex mcp add <server> -- <whoas> mcp proxy <server>`. Codex has no scopes, so `--scope` is an error there.
-  - **Existing entry:** if the agent already has a server with that name, setup fails and names it, unless `--replace` is given (remove, then add).
+  - **Existing entry:** if the agent already has a server with that name (`<agent> mcp get <server>` exits 0), setup fails and names it, unless `--replace` is given (remove, then add; for claude the removal has no `--scope`, see Amendments).
   - **Output:** prints the agent command it ran. The argv holds no secret.
-- **`whoas mcp setup <server> --print`:** prints the generic stdio JSON entry, to paste into other agents (Cursor, Gemini CLI, opencode, Hermes). The README has a snippet per agent.
+- **`whoas mcp setup <server> --print`:** prints the generic stdio JSON entry (`{"mcpServers": {"<server>": {"command": …, "args": […]}}}`), to paste into other agents (Cursor, Gemini CLI, opencode, Hermes). The README has a snippet per agent.
 
 ### `whoas providers`
 `mcp` adapters show the kind `mcp` and `n/a` in INSTALLED. They are always listed in the default view, since they need no binary.
@@ -194,3 +197,19 @@ Manual, on the author's machine:
 | go-sdk transport API changes | pin a released version; the bridge is a small, isolated package with its own tests |
 | An agent spawns stdio servers outside the project and without `WHOAS_CONTEXT_DIR` | falls back to the default profile; `--alias` in a project `.mcp.json` pins it |
 | An MCP server changes how it accepts API keys | data-only adapter; the user overrides it with a user adapter |
+
+## Amendments after the fact checks
+
+Checked on 2026-11-06 against `github.com/modelcontextprotocol/go-sdk` v1.8.0, Claude Code 2.1.291 and codex-cli 0.147.0 (`--help` output; `mcp get` only in a throw-away `HOME`/`CLAUDE_CONFIG_DIR`/`CODEX_HOME`). Each item is the smallest change that keeps the design's intent.
+
+1. **go-sdk v1.8.0** is the pinned module. It brings its own indirect modules (`google/jsonschema-go`, `yosida95/uritemplate`, `segmentio/encoding`, `golang.org/x/oauth2`, …); "the only new module" means the only new direct dependency.
+2. **Message-level bridge limits.** The SDK opens the standalone SSE stream and sets `Mcp-Protocol-Version` only for its own client sessions, so server-initiated messages reach the agent only inside responses to its requests. For sessions negotiated by a legacy `initialize`, the proxy adds the negotiated protocol version itself (in the RoundTripper); for protocol 2026-07-28 and later (`server/discover`), the SDK sets the version and method headers on calls and the proxy adds none. Only `initialize` is sent in order; every other call is sent concurrently, so a slow call never holds back the others or their cancellations. A call the remote cannot take gets a JSON-RPC error response that keeps the transport's cause (for example an HTTP 429 or 502), with secrets redacted; a failed `initialize` ends the session (exit 1).
+3. **Headers go only to `mcp.url`'s origin.** Requests to another origin get no headers and cross-origin redirects are refused.
+4. **The proxy never prompts.** The terminal belongs to the agent, so a keystore that would ask for a passphrase fails instead (`keystore.NoPrompt`) and the proxy exits 3. Exit 2 also covers an identity that resolves but is missing from the vault, and an argument that names no `mcp` adapter (a usage error, as elsewhere in whoas). The argument may also be `<server>@<alias>`; adapters of other kinds never match. `NoPrompt` only changes the passphrase store; the OS keyring and the WSL bridge never read a terminal and are used as they are, so under a headless agent run `whoas unlock` first if the keyring itself is locked.
+5. **`claude mcp get <name>`** exits 0 when the server exists in any scope and 1 (message on stderr) when it does not; for an existing server it also runs Claude's health check. `codex mcp get <name>` behaves the same, without a health check. `claude mcp add-json` refuses a name that exists in the same scope.
+6. **`--replace` for claude** runs `claude mcp remove <server>` without `--scope`: Claude removes it from whichever scope holds it and refuses (naming the scopes) when several do. Then `claude mcp add-json --scope <scope> …`. If the add then fails, the error says the previous entry was already removed and how to re-run the setup.
+7. **Codex passes only a fixed set of environment variables** (`HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_ALL`, `TERM`, `TMPDIR`, `TZ`, …) to stdio MCP servers. `WHOAS_CONTEXT_DIR` and `WHOAS_PROFILE` reach the proxy only when listed in the server's `env_vars` in `~/.codex/config.toml`, which `codex mcp add` cannot set; otherwise the proxy resolves from its working directory. The README documents it.
+8. **`mcp` is a reserved provider name** (it is a subcommand), and running an `mcp` adapter as a CLI (`whoas mcp-posthog@acme`) fails with exit 125 and points at the proxy.
+9. **The command `mcp setup` registers** is the `PATH` entry that was run when it is the same file as the running executable (so a package-manager upgrade keeps it valid), else the executable itself.
+10. **Header templates:** every `{…}` group must name a declared secret, and a header that uses an optional secret left empty is omitted.
+11. **`WHOAS_CONTEXT_DIR`** is also set for the `login.cmd` and `whoami` commands of `add`; `whoas which` resolves `mcp` adapters from it, as the proxy does. `whoas doctor` checks both `$CLAUDE_CONFIG_DIR/settings.json` and `~/.claude/settings.json`.

@@ -32,6 +32,9 @@ func newImportCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if a.Kind == adapter.KindMCP {
+				return fmt.Errorf("%s keys never live in a CLI's config, so there is nothing to import; use: whoas add %s %s", a.Name, a.Name, r.Alias)
+			}
 			if err := a.CheckConflicts(e.vars()); err != nil {
 				return err
 			}
@@ -43,7 +46,7 @@ func newImportCmd() *cobra.Command {
 				return fmt.Errorf("%s already exists (whoas rm %s first)", r, r)
 			}
 			if a.Kind == adapter.KindEnvToken {
-				values, err := secretsFromEnv(a, os.Getenv)
+				values, err := secretsFromEnv(a, r, os.Getenv)
 				if err != nil {
 					return err
 				}

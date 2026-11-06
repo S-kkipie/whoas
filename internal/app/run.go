@@ -37,7 +37,7 @@ func newRunCmd() *cobra.Command {
 			} else if _, err := os.Stat(bin); err != nil {
 				return &exitError{code: exitNotFound, err: err}
 			}
-			env := setEnv(os.Environ(), "PATH="+pathList)
+			env := setEnv(os.Environ(), append([]string{"PATH=" + pathList}, contextEnv()...)...)
 			if profile != "" {
 				env = setEnv(env, "WHOAS_PROFILE="+profile)
 			}

@@ -37,7 +37,8 @@ cmd = ["fakecli", "whoami"]
 
 // fakeAdapters are installed as user adapters in every script: the plain
 // fake CLI, a root overlay of $HOME (with a conflicting legacy dir), an
-// env-token CLI and one with helper keys.
+// env-token CLI, one with helper keys and a Claude-like env-token CLI whose
+// login.cmd runs before the prompts.
 var fakeAdapters = map[string]string{
 	"fakecli.toml": fakeAdapter,
 	"fakehome.toml": `name = "fakehome"
@@ -77,6 +78,20 @@ hint = "fake token hint"
 
 [whoami]
 cmd = ["faketok", "tokwho"]
+`,
+	"fakeclaude.toml": `name = "fakeclaude"
+bin  = "fakeclaude"
+kind = "env-token"
+unset_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
+
+[[secret]]
+env   = "CLAUDE_CODE_OAUTH_TOKEN"
+label = "Claude subscription token"
+pattern = "^sk-ant-oat01-[A-Za-z0-9_-]+$"
+
+[login]
+cmd  = ["fakeclaude", "envkey", "ANTHROPIC_API_KEY", "env", "WHOAS_CONTEXT_DIR", "setup-token"]
+hint = "fake claude hint"
 `,
 	"fakedock.toml": `name = "fakedock"
 bin  = "fakedock"
