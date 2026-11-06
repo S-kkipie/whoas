@@ -28,7 +28,7 @@ json = "user.email"
 func TestBuiltinsLoad(t *testing.T) {
 	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
 	require.NoError(t, err)
-	for _, n := range []string{"codex", "docker", "gcloud", "gh", "neonctl", "railway", "vercel", "wrangler"} {
+	for _, n := range []string{"claude", "codex", "docker", "gcloud", "gh", "mcp-linear", "mcp-posthog", "neonctl", "railway", "vercel", "wrangler"} {
 		_, ok := r.Get(n)
 		require.True(t, ok, n)
 		require.Equal(t, "builtin", r.Source(n), n)
@@ -314,7 +314,7 @@ func TestTokenBuiltins(t *testing.T) {
 	require.Equal(t, "TF_TOKEN_app_terraform_io", terraform.Secrets[0].Env)
 	stripe, _ := r.Get("stripe")
 	require.Equal(t, "STRIPE_API_KEY", stripe.Secrets[0].Env)
-	for _, n := range []string{"claude", "agent", "psql", "forge"} {
+	for _, n := range []string{"agent", "psql", "forge"} {
 		_, ok := r.Get(n)
 		require.False(t, ok, "%s is intentionally not a built-in", n)
 	}
@@ -502,4 +502,69 @@ func TestMCPRegistry(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "c.toml"), []byte(mcpAdapter("mcp-c", "alpha")), 0o600))
 	_, err = LoadRegistry(dir)
 	require.ErrorContains(t, err, `adapters "mcp-a" and "mcp-c" both use mcp.server "alpha"`)
+}
+
+func TestClaudeBuiltin(t *testing.T) {
+	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
+	require.NoError(t, err)
+	c, ok := r.ByBin("claude")
+	require.True(t, ok)
+	require.Equal(t, "claude", c.Name)
+	require.Equal(t, KindEnvToken, c.Kind)
+	require.Equal(t, []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"}, c.UnsetEnv)
+	require.Equal(t, []Secret{{Env: "CLAUDE_CODE_OAUTH_TOKEN", Label: "Claude subscription token"}}, c.Secrets)
+	require.Equal(t, []string{"claude", "setup-token"}, c.Login.Cmd)
+	require.Equal(t, "Pick the account in your browser, then paste the token claude prints.", c.Login.Hint)
+	require.Empty(t, c.Whoami.Cmd, "no whoami: Claude has none that does not spend quota")
+
+	base := []string{"PATH=/bin", "ANTHROPIC_API_KEY=api", "CLAUDE_CODE_USE_BEDROCK=1", "CLAUDE_CODE_OAUTH_TOKEN=shell"}
+	require.Equal(t, []string{"PATH=/bin", "CLAUDE_CODE_OAUTH_TOKEN=sub"}, c.SecretEnv(base, map[string]string{"CLAUDE_CODE_OAUTH_TOKEN": "sub"}))
+}
+
+func TestMCPBuiltins(t *testing.T) {
+	r, err := LoadRegistry(filepath.Join(t.TempDir(), "none"))
+	require.NoError(t, err)
+	for _, c := range []struct{ name, server, url, env, label, hint string }{
+		{"mcp-posthog", "posthog", "https://mcp.posthog.com/mcp", "POSTHOG_API_KEY", "PostHog personal API key (MCP Server preset)", "https://app.posthog.com/settings/user-api-keys"},
+		{"mcp-linear", "linear", "https://mcp.linear.app/mcp", "LINEAR_API_KEY", "Linear API key", "https://linear.app/settings/account/security"},
+	} {
+		a, ok := r.ByServer(c.server)
+		require.True(t, ok, c.server)
+		require.Equal(t, c.name, a.Name)
+		require.Equal(t, KindMCP, a.Kind)
+		require.Equal(t, MCPSpec{Server: c.server, URL: c.url, Headers: map[string]string{"Authorization": "Bearer {" + c.env + "}"}}, a.MCP)
+		require.Equal(t, []Secret{{Env: c.env, Label: c.label}}, a.Secrets)
+		require.Contains(t, a.Login.Hint, c.hint)
+		h, err := a.RenderHeaders(map[string]string{c.env: "k"})
+		require.NoError(t, err)
+		require.Equal(t, map[string]string{"Authorization": "Bearer k"}, h)
+	}
+}
+
+func TestUserReplacesMCPBuiltin(t *testing.T) {
+	// PostHog EU: a user adapter with the same server replaces the built-in.
+	dir := t.TempDir()
+	eu := replace(mcpAdapter("posthog-eu", "posthog"), "http://127.0.0.1:1/mcp", "https://mcp-eu.posthog.com/mcp")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "posthog-eu.toml"), []byte(eu), 0o600))
+	r, err := LoadRegistry(dir)
+	require.NoError(t, err)
+	_, ok := r.Get("mcp-posthog")
+	require.False(t, ok, "the built-in with the same mcp.server is dropped")
+	a, ok := r.ByServer("posthog")
+	require.True(t, ok)
+	require.Equal(t, "posthog-eu", a.Name)
+	require.Equal(t, "user", r.Source("posthog-eu"))
+	_, ok = r.Get("mcp-linear")
+	require.True(t, ok, "other built-ins stay")
+
+	// a user adapter named like the built-in replaces it too, even with another server
+	dir = t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mcp-posthog.toml"), []byte(mcpAdapter("mcp-posthog", "ph")), 0o600))
+	r, err = LoadRegistry(dir)
+	require.NoError(t, err)
+	a, ok = r.Get("mcp-posthog")
+	require.True(t, ok)
+	require.Equal(t, "ph", a.MCP.Server)
+	_, ok = r.ByServer("posthog")
+	require.False(t, ok)
 }

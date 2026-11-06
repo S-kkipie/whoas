@@ -1,0 +1,14 @@
+name = "mcp-linear"
+kind = "mcp"
+
+[mcp]
+server  = "linear"
+url     = "https://mcp.linear.app/mcp"
+headers = { Authorization = "Bearer {LINEAR_API_KEY}" }
+
+[[secret]]
+env   = "LINEAR_API_KEY"
+label = "Linear API key"
+
+[login]
+hint = "Create one at https://linear.app/settings/account/security (Personal API keys)"

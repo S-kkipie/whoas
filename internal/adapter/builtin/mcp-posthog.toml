@@ -1,0 +1,14 @@
+name = "mcp-posthog"
+kind = "mcp"
+
+[mcp]
+server  = "posthog"
+url     = "https://mcp.posthog.com/mcp"
+headers = { Authorization = "Bearer {POSTHOG_API_KEY}" }
+
+[[secret]]
+env   = "POSTHOG_API_KEY"
+label = "PostHog personal API key (MCP Server preset)"
+
+[login]
+hint = "Create one at https://app.posthog.com/settings/user-api-keys with the MCP Server preset"
