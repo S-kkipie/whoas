@@ -41,7 +41,7 @@ Any other combination is a load error. The overlay mechanics are unchanged: the 
 Optional `dir.helper_keys = ["credsStore", "credHelpers"]`: top-level JSON keys of an auth file that delegate credentials to stores outside whoas. Each key must be a plain top-level key name. They are used for the warning described under Docker.
 
 ### `experimental`
-Optional boolean. It is shown in `whoas providers`, in `whoas doctor` and in the banner (`whoas: railway@x (...) [experimental]`).
+Optional boolean. It is shown in `whoas providers` and in the banner (`whoas: railway@x (...) [experimental]`).
 
 ### Kind `env-token`
 ```toml
