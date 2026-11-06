@@ -156,7 +156,7 @@ brew install S-kkipie/tap/whoas
 ```
 
 <details>
-<summary><b>With Go</b> (≥ 1.25)</summary>
+<summary><b>With Go</b> (≥ 1.26)</summary>
 
 ```sh
 go install github.com/S-kkipie/whoas/cmd/whoas@latest
