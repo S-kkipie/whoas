@@ -153,6 +153,8 @@ func (e *env) contextLabel(dir string) string {
 
 // mcpDecrypter is decrypter for the proxy: an unlocked agent first, else the
 // keystore, which must not prompt (the terminal belongs to the agent).
+// NoPrompt only affects the passphrase store, making it return ErrNeedsTerminal
+// instead of asking on a terminal; other stores never prompt and are unchanged.
 func (e *env) mcpDecrypter() (vault.Decrypter, error) {
 	c := agent.NewClient(e.dirs.AgentSocket())
 	if locked, err := c.Status(); err == nil && !locked {

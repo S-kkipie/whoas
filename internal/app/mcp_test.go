@@ -214,3 +214,57 @@ env = "FAKE_KEY"
 	require.Contains(t, stderr, "Unauthorized")
 	require.NotContains(t, stderr, "other-secret-key")
 }
+
+// TestMCPProxyUntrustedProject verifies that untrusted .whoas.yaml files are
+// not used by the proxy (M1 rule: an untrusted project file counts as absent).
+// The proxy must use the default profile's identity or exit 2 if none exists.
+func TestMCPProxyUntrustedProject(t *testing.T) {
+	root := proxyEnv(t)
+	url := fakeMCP(t, "default-secret-key")
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cfg", "adapters", "fake.toml"), []byte(`name = "mcp-fake"
+kind = "mcp"
+[mcp]
+server  = "fake"
+url     = "`+url+`"
+headers = { Authorization = "Bearer {FAKE_KEY}" }
+[[secret]]
+env = "FAKE_KEY"
+`), 0o600))
+	seal(t, ref.Ref{Provider: "mcp-fake", Alias: "default"}, map[string]string{"FAKE_KEY": "default-secret-key"})
+	seal(t, ref.Ref{Provider: "mcp-fake", Alias: "untrusted"}, map[string]string{"FAKE_KEY": "untrusted-secret-key"})
+
+	// Create a repo with an untrusted .whoas.yaml that maps to the untrusted alias
+	repo := filepath.Join(root, "repo")
+	require.NoError(t, os.MkdirAll(repo, 0o700))
+	pf := filepath.Join(repo, ".whoas.yaml")
+	untrustedBody := []byte("mcp-fake: untrusted\n")
+	require.NoError(t, os.WriteFile(pf, untrustedBody, 0o600))
+	// Note: we do NOT trust this file
+
+	// Set up default profile in config
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cfg", "config.yaml"),
+		[]byte("default_profile: default\nprofiles:\n  default:\n    mcp-fake: default\n"), 0o600))
+
+	// (a) With default profile, proxy should use the default profile's key,
+	// not the untrusted project file's key. Set WHOAS_CONTEXT_DIR to repo
+	// and verify the default alias is used.
+	t.Setenv("WHOAS_CONTEXT_DIR", repo)
+	text, code, stderr := callWhoami(t, "fake")
+	require.Equal(t, 0, code, stderr)
+	require.Equal(t, "key=default-secret-key", text, "must use default profile, not untrusted project file")
+
+	// (b) With no default profile (unset it), proxy should exit 2 when context dir
+	// has an untrusted project file with no profile to fall back to
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cfg", "config.yaml"),
+		[]byte(""), 0o600))
+	code, stderr = proxy("fake")
+	require.Equal(t, 2, code)
+	require.Contains(t, stderr, "no identity for mcp-fake here")
+
+	// Verify nothing was written to stdout in the exit-2 case
+	// (stdout is the MCP channel and must remain clean)
+	var stdout bytes.Buffer
+	code = mcpProxy(context.Background(), "fake", strings.NewReader(""), &stdout, io.Discard)
+	require.Equal(t, 2, code)
+	require.Empty(t, stdout.String(), "no data should be written to stdout on exit 2")
+}

@@ -36,7 +36,8 @@ type Store interface {
 
 // NoPrompt returns s made to fail with ErrNeedsTerminal instead of asking
 // for a passphrase: for processes whose terminal belongs to someone else,
-// like an MCP proxy started by an agent.
+// like an MCP proxy started by an agent. It only affects the passphrase store;
+// other stores (env, OS keyring, WSL bridge) never prompt and are returned unchanged.
 func NoPrompt(s Store) Store {
 	if p, ok := s.(*passphraseStore); ok {
 		c := *p
