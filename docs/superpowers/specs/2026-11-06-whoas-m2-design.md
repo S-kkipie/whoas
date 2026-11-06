@@ -1,0 +1,153 @@
+# whoas M2 — Design Addendum
+
+**Date:** 2026-11-06
+**Status:** Approved (design), pending implementation plan
+**Author:** Adrian Issac (GitHub: S-kkipie)
+**Extends:** [`2026-11-05-whoas-design.md`](2026-11-05-whoas-design.md) (M1, shipped). Everything not stated here stays as in M1.
+
+## Scope
+
+M2 adds the CLIs whose sessions don't fit M1's sub-directory overlays, plus CLIs authenticated by API tokens:
+
+- `vercel`, `docker`: `dir-overlay`, as in M1.
+- `wrangler`, `railway` (experimental): **root overlays** (`XDG_CONFIG_HOME` / `HOME`).
+- New **`env-token`** adapter kind: `supabase` (hand-written) plus a reviewed set of token-based CLIs.
+- `whoas providers` UX for a long adapter list.
+
+Out of M2: Claude Code + MCP (M3), native Windows, git identities, and the M1 deferred items listed in the M1 ledger.
+
+## Findings that shaped the design (this machine, 2026-11-06)
+
+- **Spike 0b resolved by inspection.** Under WSL, `vercel` is the npm shim `/mnt/c/.../npm/vercel`. It is a POSIX script that `exec`s `node` when there is no `node.exe` beside it, so the Linux node runs the Windows-installed JS. vercel therefore behaves as a Linux CLI: its config lives in `$XDG_DATA_HOME/com.vercel.cli`, and `--global-config` takes a Linux path. No `wslpath` translation is needed for npm-installed CLIs.
+- `wrangler` keeps its OAuth session in `$XDG_CONFIG_HOME/.wrangler/config/default.toml` (it resolves the dir via XDG). The access token expires hourly and is refreshed in place.
+- `railway` keeps token + project links in `~/.railway/config.json` (with `config.lock`), resolved from `$HOME`.
+- `docker` keeps inline `auths` in `~/.docker/config.json`. `credHelpers`/`credsStore` entries delegate to external stores.
+- `WSLENV` does not forward Linux env vars to Windows executables (irrelevant now that vercel runs on Linux node).
+
+## Adapter schema changes
+
+### Root overlays
+`dir.global` may now also be **exactly** `{home}`, `{xdg_config}` or `{xdg_data}`. In that case `dir.inject.env` must set the matching variable to `{dir}`:
+
+| `global` | required injection |
+|---|---|
+| `{home}` | `HOME = "{dir}"` |
+| `{xdg_config}` | `XDG_CONFIG_HOME = "{dir}"` |
+| `{xdg_data}` | `XDG_DATA_HOME = "{dir}"` |
+
+Any other combination is a load error. The overlay mechanics are unchanged: the whole root is mirrored as symlinks except `auth_files` (nested paths supported since M1), and new entries the CLI creates are promoted to the real root on exit.
+
+### `experimental`
+Optional boolean. It is shown in `whoas providers`, in `whoas doctor` and in the banner (`whoas: railway@x (...) [experimental]`).
+
+### Kind `env-token`
+```toml
+name      = "stripe"
+bin       = "stripe"
+kind      = "env-token"
+unset_env = []
+
+[[secret]]
+env      = "STRIPE_API_KEY"
+label    = "Stripe Secret Key"
+optional = false
+
+[login]
+hint = "Create one at https://dashboard.stripe.com/apikeys"
+
+[whoami]
+cmd  = ["stripe", "config", "--list"]
+json = ""
+```
+Validation:
+- `[dir]` and `login.cmd` are forbidden.
+- There must be ≥ 1 `[[secret]]`.
+- Each `secret.env` matches the env-name regex and is unique.
+- No `secret.env` appears in `unset_env`.
+- `whoami.cmd[0] == bin` (as in M1).
+
+## `env-token` behaviour
+
+- **`whoas add <p> <alias>`**:
+  - Shows `login.hint` if present.
+  - Prompts once per secret on `/dev/tty` with echo off: `<label> (<ENV>): `. An empty answer is an error unless `optional`.
+  - `--stdin` reads one line per secret, in declaration order, for scripts and CI.
+  - Runs `whoami` (if defined) with the secrets injected, for the account label and the duplicate-account warning.
+  - Seals an envelope whose files are `env/<ENV>` → value.
+- **`whoas import <p> <alias>`**: reads every required secret from the current process environment and fails naming the missing ones. Optional secrets are taken if present. It then seals as above.
+- **Run** (explicit, shim, `run`):
+  - Same resolution, trust, depth and exit codes as M1.
+  - Decrypt (agent first) → child env = `base − unset_env − secret envs + ENV=value…` → spawn.
+  - **No overlay, lock or seal-on-write** (tokens are static).
+  - Signals and exit status go through the same supervisor helper.
+- **`whoas ls`**: ACTIVE shows `-` (no holders). **`rm`**: no lock needed.
+- **Secrets** live only in the vault and the child's env, never in argv, stdout/stderr or logs.
+
+## Built-in adapters added
+
+| Adapter | Kind | global / inject | auth / secrets | unset_env | notes |
+|---|---|---|---|---|---|
+| `vercel` | dir-overlay | `{xdg_data}/com.vercel.cli`, flag `--global-config {dir}` | `auth.json`, `config.json` | `VERCEL_TOKEN` | `config.json` holds `currentTeam` → per identity |
+| `wrangler` | dir-overlay (root) | `{xdg_config}`, `XDG_CONFIG_HOME={dir}` | `.wrangler/config/default.toml` | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` | |
+| `railway` | dir-overlay (root), experimental | `{home}`, `HOME={dir}` | `.railway/config.json` | `RAILWAY_TOKEN`, `RAILWAY_API_TOKEN` | children of `railway run` also see the overlay HOME |
+| `docker` | dir-overlay | `{home}/.docker`, `DOCKER_CONFIG={dir}` | `config.json` | — | warns about `credHelpers`/`credsStore` |
+| `supabase` | env-token | — | `SUPABASE_ACCESS_TOKEN` | — | |
+| token CLIs | env-token | — | per CLI | per CLI | reviewed set, see below |
+
+Login and `whoami` commands for vercel, wrangler and railway are pinned by a read-only check of the installed CLIs (`--help` / `whoami`) before the adapters are written.
+
+### Docker credential helpers
+After `add`/`import` (and in `doctor` for docker identities), if the sealed `config.json` contains `credsStore` or `credHelpers`, whoas prints:
+
+```
+warning: docker@<a>: registries <list> use credential helpers; their credentials stay in the helper's global store and are not isolated by whoas
+```
+
+Tip, documented: any credential the CLI writes **during a run** is captured, so `whoas docker@work login ghcr.io` adds a registry to that identity.
+
+### Token-based CLI set
+- The env-var data for token-based CLIs is collected once, out of band, from the public [1Password Shell Plugins](https://github.com/1Password/shell-plugins) catalogue (MIT). The collection tool is **not** committed.
+- Only plugins whose default provisioner is a plain env-var mapping qualify. Bins already covered by a hand-written adapter, and collisions, are excluded. The resulting list is reviewed by hand.
+- The adapters are committed as ordinary whoas built-ins, in the same style as the hand-written ones. The README credits 1Password Shell Plugins as the reference for the env-var names.
+- The adapters contain only facts (binary names, env-var names, URLs), no third-party code.
+
+## `whoas providers`
+- Default: installed CLIs only, then a line `+N more (whoas providers --all)`.
+- `--all`: every adapter.
+- Columns: `PROVIDER BIN KIND SOURCE INSTALLED`, with `SOURCE` = `builtin` | `user`. Experimental adapters show `(experimental)` after the kind.
+
+## Code structure
+- `internal/adapter`:
+  - `Adapter` gains `Experimental bool` and `Secrets []Secret` (`Secret{Env, Label string; Optional bool}`).
+  - `Kind` gains `KindEnvToken`.
+  - Validation follows the rules above.
+  - The registry gains a `Source(name) string` method.
+- `internal/supervisor`:
+  - The child-process launch (signals, wait, result) is extracted into `spawnCmd(bin string, argv, env []string, stdio)`. `Plan.spawn` uses it.
+  - New `RunEnv(ctx, EnvPlan) (Result, error)` for env-token runs.
+- `internal/app`:
+  - `runProvider`, `add` and `import` branch on `Kind`.
+  - Hidden prompt and `--stdin` helpers.
+  - Docker helper warning.
+  - `providers --all`.
+
+## Testing
+- e2e (testscript), using extra copies of the fake CLI under other names (bins must be unique):
+  - **`fakehome`**: a root `{home}` overlay. Covers add, import and run, global auth untouched, promotion of new files in `~`, concurrent runs.
+  - **`faketok`**: env-token. Covers `add --stdin`, `import` from the env, injection plus `unset_env`, `ls`, profiles, shim passthrough, no secret in whoas output, blob not plaintext.
+  - **docker-helper warning**: a fixture `config.json` with `credHelpers`.
+- Unit tests:
+  - validation (root ↔ variable, env-token schema);
+  - root-overlay mirror;
+  - `spawnCmd` / `RunEnv`;
+  - `providers` listing;
+  - **every built-in loads, validates and has a unique bin**.
+- Manual, read-only smoke against the real CLIs on the author's machine: `whoami` format before writing adapters; `import` + `whoas <cli>@x whoami` after.
+
+## Risks
+| Risk | Mitigation |
+|---|---|
+| A tool under `railway` ignores `$HOME` | marked experimental; documented |
+| Token adapter data drifts from the real CLI | data only, so a wrong var means the token is not used; nothing breaks; re-collect when needed |
+| vercel `config.json` per identity stops sharing telemetry/preferences | accepted: required to isolate `currentTeam` |
+| Root overlays mirror many entries | top-level only (typically < 200 symlinks, ~1 ms); measured in tests |

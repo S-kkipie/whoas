@@ -400,7 +400,7 @@ aws-vault (exec + keyring), 1Password shell-plugins (env-var catalog, MIT).
   config/profiles/resolver/trust; supervisor (lock, refcount, overlay,
   seal-on-write, recovery); shims + `run`; `doctor`. Adapters: gh, gcloud,
   codex, neonctl. Plan: `docs/superpowers/plans/2026-11-05-whoas-m1-core.md`.
-- **M2 — Breadth:** vercel, wrangler, railway (experimental), docker; `env-token` kind
+- **M2 — Breadth** (design: [`2026-11-06-whoas-m2-design.md`](2026-11-06-whoas-m2-design.md)): vercel, wrangler, railway (experimental), docker; `env-token` kind
   (supabase, terraform); catalog import from 1Password shell-plugins.
 - **M3 — Claude + MCP:** `json-slice` adapter (`claude`, `mcp/<server>`).
 - **Phase 2:** Claude on macOS (keychain), native Windows shims, git identity,
