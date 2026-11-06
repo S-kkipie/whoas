@@ -37,6 +37,9 @@ Out of M2: Claude Code + MCP (M3), native Windows, git identities, and the M1 de
 
 Any other combination is a load error. The overlay mechanics are unchanged: the whole root is mirrored as symlinks except `auth_files` (nested paths supported since M1), and new entries the CLI creates are promoted to the real root on exit.
 
+### `helper_keys`
+Optional `dir.helper_keys = ["credsStore", "credHelpers"]`: top-level JSON keys of an auth file that delegate credentials to stores outside whoas. Each key must be a plain top-level key name. They are used for the warning described under Docker.
+
 ### `experimental`
 Optional boolean. It is shown in `whoas providers`, in `whoas doctor` and in the banner (`whoas: railway@x (...) [experimental]`).
 
@@ -51,6 +54,7 @@ unset_env = []
 env      = "STRIPE_API_KEY"
 label    = "Stripe Secret Key"
 optional = false
+plain    = false        # true: not secret (a host, an org) → prompt with echo
 
 [login]
 hint = "Create one at https://dashboard.stripe.com/apikeys"
@@ -59,6 +63,8 @@ hint = "Create one at https://dashboard.stripe.com/apikeys"
 cmd  = ["stripe", "config", "--list"]
 json = ""
 ```
+Env-var names may contain lowercase letters (`TF_TOKEN_app_terraform_io`), here and in `unset_env`/`inject.env`.
+
 Validation:
 - `[dir]` and `login.cmd` are forbidden.
 - There must be ≥ 1 `[[secret]]`.
@@ -70,7 +76,7 @@ Validation:
 
 - **`whoas add <p> <alias>`**:
   - Shows `login.hint` if present.
-  - Prompts once per secret on `/dev/tty` with echo off: `<label> (<ENV>): `. An empty answer is an error unless `optional`.
+  - Prompts once per secret on `/dev/tty`: `<label> (<ENV>): `. Echo is off unless the secret is `plain`. An empty answer is an error unless `optional`.
   - `--stdin` reads one line per secret, in declaration order, for scripts and CI.
   - Runs `whoami` (if defined) with the secrets injected, for the account label and the duplicate-account warning.
   - Seals an envelope whose files are `env/<ENV>` → value.
@@ -88,20 +94,28 @@ Validation:
 | Adapter | Kind | global / inject | auth / secrets | unset_env | notes |
 |---|---|---|---|---|---|
 | `vercel` | dir-overlay | `{xdg_data}/com.vercel.cli`, flag `--global-config {dir}` | `auth.json`, `config.json` | `VERCEL_TOKEN` | `config.json` holds `currentTeam` → per identity |
-| `wrangler` | dir-overlay (root) | `{xdg_config}`, `XDG_CONFIG_HOME={dir}` | `.wrangler/config/default.toml` | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` | |
+| `wrangler` | dir-overlay (root) | `{xdg_config}`, `XDG_CONFIG_HOME={dir}` | `.wrangler/config` (whole dir: wrangler has its own auth profiles) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` | |
 | `railway` | dir-overlay (root), experimental | `{home}`, `HOME={dir}` | `.railway/config.json` | `RAILWAY_TOKEN`, `RAILWAY_API_TOKEN` | children of `railway run` also see the overlay HOME |
 | `docker` | dir-overlay | `{home}/.docker`, `DOCKER_CONFIG={dir}` | `config.json` | — | warns about `credHelpers`/`credsStore` |
 | `supabase` | env-token | — | `SUPABASE_ACCESS_TOKEN` | — | |
 | token CLIs | env-token | — | per CLI | per CLI | reviewed set, see below |
 
-Login and `whoami` commands for vercel, wrangler and railway are pinned by a read-only check of the installed CLIs (`--help` / `whoami`) before the adapters are written.
+Login and `whoami` are pinned from the installed CLIs, read-only (`--help` and source):
+
+| CLI | login | whoami | account field |
+|---|---|---|---|
+| vercel | `vercel login` | `vercel whoami --format json` | `email` |
+| wrangler | `wrangler login` | `wrangler whoami --json` | `email` |
+| railway | `railway login` | `railway whoami --json` | `email` (to confirm in the real smoke test) |
 
 ### Docker credential helpers
-After `add`/`import` (and in `doctor` for docker identities), if the sealed `config.json` contains `credsStore` or `credHelpers`, whoas prints:
+After `add`/`import`, if a sealed auth file contains one of the adapter's `helper_keys`, whoas prints:
 
 ```
-warning: docker@<a>: registries <list> use credential helpers; their credentials stay in the helper's global store and are not isolated by whoas
+warning: docker@<a>: config.json delegates credentials to helpers (credHelpers: <registries>; credsStore: <store>); those stay in the helper's own store and are not isolated by whoas
 ```
+
+This is not repeated in `doctor`, which would have to decrypt every identity.
 
 Tip, documented: any credential the CLI writes **during a run** is captured, so `whoas docker@work login ghcr.io` adds a registry to that identity.
 
@@ -115,6 +129,7 @@ Tip, documented: any credential the CLI writes **during a run** is captured, so 
 - Default: installed CLIs only, then a line `+N more (whoas providers --all)`.
 - `--all`: every adapter.
 - Columns: `PROVIDER BIN KIND SOURCE INSTALLED`, with `SOURCE` = `builtin` | `user`. Experimental adapters show `(experimental)` after the kind.
+- Installed-ness is resolved with one PATH index: each PATH directory is listed once. Stat-ing every directory per adapter took 47 s on WSL, whose PATH holds ~45 `/mnt/c` directories. `shims install` uses the same index.
 
 ## Code structure
 - `internal/adapter`:
