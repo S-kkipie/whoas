@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -232,4 +233,11 @@ func TestReaperDropsExpiredKey(t *testing.T) {
 		defer srv.mu.Unlock()
 		return srv.key == nil
 	}, 1*time.Second, 10*time.Millisecond)
+}
+
+func TestSocketPathTooLong(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), strings.Repeat("d", 120))
+	err := NewServer().Serve(context.Background(), filepath.Join(dir, "agent.sock"))
+	require.ErrorContains(t, err, "over the")
+	require.ErrorContains(t, err, "WHOAS_RUNTIME_DIR")
 }

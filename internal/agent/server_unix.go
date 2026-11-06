@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -39,6 +40,9 @@ func NewServer() *Server { return &Server{now: time.Now, reapEvery: 30 * time.Se
 // socketPath+".lock", held for the agent's lifetime, makes it a singleton:
 // only the lock holder owns (and may remove) the socket path.
 func (s *Server) Serve(ctx context.Context, socketPath string) error {
+	if err := checkSocketPath(socketPath); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
 		return err
 	}
@@ -172,4 +176,18 @@ func (s *Server) do(req request) response {
 		return response{OK: true, Data: plain}
 	}
 	return response{Error: "unknown op " + req.Op}
+}
+
+// checkSocketPath turns the kernel's opaque "bind: invalid argument" for an
+// over-long unix socket path (sun_path: 108 bytes on Linux, 104 on macOS/BSD,
+// including the NUL) into an actionable error.
+func checkSocketPath(p string) error {
+	max := 107
+	if runtime.GOOS != "linux" {
+		max = 103
+	}
+	if len(p) > max {
+		return fmt.Errorf("agent socket path is %d bytes, over the %d-byte unix socket limit: %s (set WHOAS_RUNTIME_DIR to a shorter dir)", len(p), max, p)
+	}
+	return nil
 }

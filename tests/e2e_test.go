@@ -62,7 +62,18 @@ func TestScripts(t *testing.T) {
 			env.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 			env.Setenv("WHOAS_CONFIG_DIR", cfg)
 			env.Setenv("WHOAS_DATA_DIR", filepath.Join(env.WorkDir, "data"))
-			env.Setenv("WHOAS_RUNTIME_DIR", filepath.Join(env.WorkDir, "run"))
+			// $WORK can be too deep for a unix socket path (macOS: 104 bytes),
+			// so the runtime dir lives in a short temp dir; $WORK/run links to
+			// it so scripts can keep using $WORK/run.
+			rt, err := os.MkdirTemp("", "wr")
+			if err != nil {
+				return err
+			}
+			env.Defer(func() { os.RemoveAll(rt) })
+			if err := os.Symlink(rt, filepath.Join(env.WorkDir, "run")); err != nil {
+				return err
+			}
+			env.Setenv("WHOAS_RUNTIME_DIR", rt)
 			env.Setenv("WHOAS_MASTER_KEY", masterKey)
 			return os.MkdirAll(home, 0o700)
 		},
