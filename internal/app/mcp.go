@@ -31,7 +31,7 @@ func init() { register(newMCPCmd) }
 
 func newMCPCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "mcp", Short: "Use remote MCP servers as a chosen identity, from any AI agent"}
-	cmd.AddCommand(&cobra.Command{
+	cmd.AddCommand(newMCPSetupCmd(), &cobra.Command{
 		Use:   "proxy <server | provider | provider@alias>",
 		Short: "Run a stdio MCP server that forwards to the remote server with the identity's API key",
 		Args:  cobra.ExactArgs(1),
